@@ -115,11 +115,14 @@ func TestQueueMaxSizeDrop(t *testing.T) {
 		{Name: "limited", Protocol: "UDP", Priority: 5, MaxQueue: 1},
 	})
 
-	ok, dropped := q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "UDP"}})
+	ok, dropped, className := q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "UDP"}})
 	if !ok || dropped {
 		t.Fatalf("expected first enqueue ok")
 	}
-	ok, dropped = q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "UDP"}})
+	if className != "limited" {
+		t.Fatalf("expected class limited, got %s", className)
+	}
+	ok, dropped, _ = q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "UDP"}})
 	if ok || !dropped {
 		t.Fatalf("expected enqueue drop due to max_queue")
 	}
@@ -130,11 +133,14 @@ func TestQueueHeadDrop(t *testing.T) {
 		{Name: "limited", Protocol: "UDP", Priority: 5, MaxQueue: 1, DropPolicy: "head"},
 	})
 
-	ok, dropped := q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "UDP", SrcPort: 1000}})
+	ok, dropped, className := q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "UDP", SrcPort: 1000}})
 	if !ok || dropped {
 		t.Fatalf("expected first enqueue ok")
 	}
-	ok, dropped = q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "UDP", SrcPort: 2000}})
+	if className != "limited" {
+		t.Fatalf("expected class limited, got %s", className)
+	}
+	ok, dropped, _ = q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "UDP", SrcPort: 2000}})
 	if !ok || !dropped {
 		t.Fatalf("expected enqueue with head drop")
 	}
