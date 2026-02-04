@@ -13,9 +13,13 @@ type cacheEntry struct {
 }
 
 type CacheValue struct {
-	Status  int
-	Headers map[string]string
-	Body    []byte
+	Status        int
+	Headers       map[string]string
+	Body          []byte
+	StoredAt      time.Time
+	MaxAgeSeconds int
+	VaryHeaders   map[string]string
+	ETag          string
 }
 
 type Cache struct {
@@ -42,36 +46,50 @@ func NewCache(capacity int, ttl time.Duration) *Cache {
 }
 
 func (c *Cache) Get(key string) (*CacheValue, bool) {
+	value, ok, expired := c.GetEntry(key)
+	if !ok || expired {
+		return nil, false
+	}
+	return value, true
+}
+
+func (c *Cache) GetEntry(key string) (*CacheValue, bool, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	elem, ok := c.entries[key]
 	if !ok {
-		return nil, false
+		return nil, false, false
 	}
 	entry := elem.Value.(*cacheEntry)
+	expired := time.Now().After(entry.expiresAt)
 	if time.Now().After(entry.expiresAt) {
-		c.order.Remove(elem)
-		delete(c.entries, key)
-		return nil, false
+		return entry.value, true, true
 	}
 	c.order.MoveToFront(elem)
-	return entry.value, true
+	return entry.value, true, expired
 }
 
 func (c *Cache) Set(key string, value *CacheValue) {
+	c.SetWithTTL(key, value, c.ttl)
+}
+
+func (c *Cache) SetWithTTL(key string, value *CacheValue, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if ttl <= 0 {
+		ttl = c.ttl
+	}
 	if elem, ok := c.entries[key]; ok {
 		entry := elem.Value.(*cacheEntry)
 		entry.value = value
-		entry.expiresAt = time.Now().Add(c.ttl)
+		entry.expiresAt = time.Now().Add(ttl)
 		c.order.MoveToFront(elem)
 		return
 	}
 	entry := &cacheEntry{
 		key:       key,
 		value:     value,
-		expiresAt: time.Now().Add(c.ttl),
+		expiresAt: time.Now().Add(ttl),
 	}
 	elem := c.order.PushFront(entry)
 	c.entries[key] = elem
