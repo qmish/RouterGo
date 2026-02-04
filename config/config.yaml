@@ -64,6 +64,8 @@ p2p:
   multicast_addr: 224.0.0.251:5355
   sync_interval: 10
   peer_ttl_seconds: 30
+  private_key_file: p2p_private.key
+  public_key_file: p2p_public.key
 
 proxy:
   enabled: false

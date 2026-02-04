@@ -2,7 +2,9 @@ package p2p
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
+	"encoding/hex"
 	"net"
 	"strconv"
 	"sync"
@@ -31,6 +33,8 @@ type Config struct {
 	PeerTTL       time.Duration
 	ListenAddr    string
 	MulticastAddr string
+	PrivateKey    ed25519.PrivateKey
+	PublicKey     ed25519.PublicKey
 }
 
 type Engine struct {
@@ -39,6 +43,8 @@ type Engine struct {
 	peers       map[string]Peer
 	routes      []routing.Route
 	routeSet    map[string]struct{}
+	replayGuard map[string]map[uint64]struct{}
+	seq         uint64
 	table       *routing.Table
 	transport   Transport
 	onPeer      func()
@@ -47,9 +53,13 @@ type Engine struct {
 }
 
 type message struct {
-	Type   string        `json:"type"`
-	PeerID string        `json:"peer_id"`
-	Routes []RouteAdvert `json:"routes,omitempty"`
+	Type      string        `json:"type"`
+	PeerID    string        `json:"peer_id"`
+	Seq       uint64        `json:"seq"`
+	Timestamp int64         `json:"ts"`
+	TTL       int           `json:"ttl"`
+	Routes    []RouteAdvert `json:"routes,omitempty"`
+	Signature string        `json:"sig,omitempty"`
 }
 
 func NewEngine(cfg Config, table *routing.Table, transport Transport, onPeer func(), onRouteSync func()) *Engine {
@@ -64,6 +74,7 @@ func NewEngine(cfg Config, table *routing.Table, transport Transport, onPeer fun
 		peers:       map[string]Peer{},
 		routes:      nil,
 		routeSet:    map[string]struct{}{},
+		replayGuard: map[string]map[uint64]struct{}{},
 		table:       table,
 		transport:   transport,
 		onPeer:      onPeer,
@@ -113,6 +124,7 @@ func (e *Engine) Reset() {
 	e.peers = map[string]Peer{}
 	e.routes = nil
 	e.routeSet = map[string]struct{}{}
+	e.replayGuard = map[string]map[uint64]struct{}{}
 }
 
 func (e *Engine) receiveLoop(ctx context.Context) {
@@ -158,11 +170,10 @@ func (e *Engine) syncLoop(ctx context.Context) {
 }
 
 func (e *Engine) sendHello() error {
-	msg := message{
+	return e.sendMessage(message{
 		Type:   "HELLO",
 		PeerID: e.cfg.PeerID,
-	}
-	return e.sendMessage(msg)
+	})
 }
 
 func (e *Engine) sendRoutes() error {
@@ -176,15 +187,22 @@ func (e *Engine) sendRoutes() error {
 			Metric:      route.Metric,
 		})
 	}
-	msg := message{
+	return e.sendMessage(message{
 		Type:   "ROUTES",
 		PeerID: e.cfg.PeerID,
 		Routes: adverts,
-	}
-	return e.sendMessage(msg)
+	})
 }
 
 func (e *Engine) sendMessage(msg message) error {
+	msg.Seq = e.nextSeq()
+	msg.Timestamp = e.nowFunc().Unix()
+	msg.TTL = 2
+	signature, err := signMessage(msg, e.cfg.PrivateKey)
+	if err != nil {
+		return err
+	}
+	msg.Signature = signature
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return err
@@ -197,6 +215,17 @@ func (e *Engine) handleMessage(data []byte, addr string) error {
 	if err := json.Unmarshal(data, &msg); err != nil {
 		return err
 	}
+	if msg.TTL <= 0 {
+		return nil
+	}
+	if !verifyMessage(msg, e.cfg.PublicKey) {
+		return nil
+	}
+	msg.TTL--
+	if e.isReplay(msg.PeerID, msg.Seq) {
+		return nil
+	}
+	e.rememberSeq(msg.PeerID, msg.Seq)
 	switch msg.Type {
 	case "HELLO":
 		e.addPeer(msg.PeerID, addr)
@@ -268,6 +297,65 @@ func (e *Engine) prunePeers(now time.Time) {
 			delete(e.peers, id)
 		}
 	}
+}
+
+func (e *Engine) nextSeq() uint64 {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.seq++
+	return e.seq
+}
+
+func (e *Engine) isReplay(peerID string, seq uint64) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if _, ok := e.replayGuard[peerID]; !ok {
+		return false
+	}
+	_, exists := e.replayGuard[peerID][seq]
+	return exists
+}
+
+func (e *Engine) rememberSeq(peerID string, seq uint64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if _, ok := e.replayGuard[peerID]; !ok {
+		e.replayGuard[peerID] = map[uint64]struct{}{}
+	}
+	e.replayGuard[peerID][seq] = struct{}{}
+	if len(e.replayGuard[peerID]) > 1000 {
+		e.replayGuard[peerID] = map[uint64]struct{}{}
+	}
+}
+
+func signMessage(msg message, key ed25519.PrivateKey) (string, error) {
+	if len(key) == 0 {
+		return "", nil
+	}
+	payload := signaturePayload(msg)
+	sig := ed25519.Sign(key, payload)
+	return hex.EncodeToString(sig), nil
+}
+
+func verifyMessage(msg message, pub ed25519.PublicKey) bool {
+	if len(pub) == 0 {
+		return true
+	}
+	if msg.Signature == "" {
+		return false
+	}
+	raw, err := hex.DecodeString(msg.Signature)
+	if err != nil {
+		return false
+	}
+	payload := signaturePayload(msg)
+	return ed25519.Verify(pub, payload, raw)
+}
+
+func signaturePayload(msg message) []byte {
+	msg.Signature = ""
+	b, _ := json.Marshal(msg)
+	return b
 }
 
 func routeKey(route routing.Route) string {
