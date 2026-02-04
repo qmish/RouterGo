@@ -95,7 +95,7 @@ func startPacketLoop(
 		return
 	}
 
-	go runEgressLoop(ctx, io, qosQueue, log)
+	go runEgressLoop(ctx, io, qosQueue, log, metricsSrv)
 
 	go func() {
 		defer io.Close()
@@ -111,6 +111,7 @@ func startPacketLoop(
 				metricsSrv.IncErrors()
 				continue
 			}
+			metricsSrv.IncRxPackets()
 
 			meta, err := network.ParseIPMetadata(pkt.Data)
 			if err != nil {
@@ -155,7 +156,7 @@ func processPacket(
 	}
 }
 
-func runEgressLoop(ctx context.Context, io network.PacketIO, qosQueue *qos.QueueManager, log *logger.Logger) {
+func runEgressLoop(ctx context.Context, io network.PacketIO, qosQueue *qos.QueueManager, log *logger.Logger, metricsSrv *metrics.Metrics) {
 	if qosQueue == nil {
 		return
 	}
@@ -166,18 +167,21 @@ func runEgressLoop(ctx context.Context, io network.PacketIO, qosQueue *qos.Queue
 		default:
 		}
 
-		if ok := dequeueAndWrite(qosQueue, io); !ok {
+		if ok := dequeueAndWrite(qosQueue, io, metricsSrv); !ok {
 			time.Sleep(2 * time.Millisecond)
 		}
 	}
 }
 
-func dequeueAndWrite(qosQueue *qos.QueueManager, io network.PacketIO) bool {
+func dequeueAndWrite(qosQueue *qos.QueueManager, io network.PacketIO, metricsSrv *metrics.Metrics) bool {
 	pkt, ok := qosQueue.Dequeue()
 	if !ok {
 		return false
 	}
 	_ = io.WritePacket(context.Background(), pkt)
+	if metricsSrv != nil {
+		metricsSrv.IncTxPackets()
+	}
 	return true
 }
 
