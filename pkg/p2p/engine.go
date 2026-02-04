@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -27,19 +28,22 @@ type Config struct {
 	PeerID        string
 	Discovery     bool
 	SyncInterval  time.Duration
+	PeerTTL       time.Duration
 	ListenAddr    string
 	MulticastAddr string
 }
 
 type Engine struct {
-	mu           sync.Mutex
-	cfg          Config
-	peers        map[string]Peer
-	routes       []routing.Route
-	table        *routing.Table
-	transport    Transport
-	onPeer       func()
-	onRouteSync  func()
+	mu          sync.Mutex
+	cfg         Config
+	peers       map[string]Peer
+	routes      []routing.Route
+	routeSet    map[string]struct{}
+	table       *routing.Table
+	transport   Transport
+	onPeer      func()
+	onRouteSync func()
+	nowFunc     func() time.Time
 }
 
 type message struct {
@@ -52,14 +56,19 @@ func NewEngine(cfg Config, table *routing.Table, transport Transport, onPeer fun
 	if cfg.SyncInterval == 0 {
 		cfg.SyncInterval = 10 * time.Second
 	}
+	if cfg.PeerTTL == 0 {
+		cfg.PeerTTL = 3 * cfg.SyncInterval
+	}
 	return &Engine{
-		cfg:       cfg,
-		peers:     map[string]Peer{},
-		routes:    nil,
-		table:     table,
-		transport: transport,
-		onPeer:    onPeer,
+		cfg:         cfg,
+		peers:       map[string]Peer{},
+		routes:      nil,
+		routeSet:    map[string]struct{}{},
+		table:       table,
+		transport:   transport,
+		onPeer:      onPeer,
 		onRouteSync: onRouteSync,
+		nowFunc:     time.Now,
 	}
 }
 
@@ -103,6 +112,7 @@ func (e *Engine) Reset() {
 	defer e.mu.Unlock()
 	e.peers = map[string]Peer{}
 	e.routes = nil
+	e.routeSet = map[string]struct{}{}
 }
 
 func (e *Engine) receiveLoop(ctx context.Context) {
@@ -142,6 +152,7 @@ func (e *Engine) syncLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			_ = e.sendRoutes()
+			e.prunePeers(e.nowFunc())
 		}
 	}
 }
@@ -190,6 +201,7 @@ func (e *Engine) handleMessage(data []byte, addr string) error {
 	case "HELLO":
 		e.addPeer(msg.PeerID, addr)
 	case "ROUTES":
+		e.addPeer(msg.PeerID, addr)
 		e.applyRoutes(msg.Routes)
 	}
 	return nil
@@ -205,7 +217,7 @@ func (e *Engine) addPeer(id string, addr string) {
 	e.peers[id] = Peer{
 		ID:       id,
 		Addr:     addr,
-		LastSeen: time.Now(),
+		LastSeen: e.nowFunc(),
 	}
 	if !exists && e.onPeer != nil {
 		e.onPeer()
@@ -230,8 +242,12 @@ func (e *Engine) applyRoutes(adverts []RouteAdvert) {
 			e.table.Add(route)
 			added++
 		}
+		key := routeKey(route)
 		e.mu.Lock()
-		e.routes = append(e.routes, route)
+		if _, exists := e.routeSet[key]; !exists {
+			e.routeSet[key] = struct{}{}
+			e.routes = append(e.routes, route)
+		}
 		e.mu.Unlock()
 	}
 	if added > 0 && e.onRouteSync != nil {
@@ -239,6 +255,23 @@ func (e *Engine) applyRoutes(adverts []RouteAdvert) {
 			e.onRouteSync()
 		}
 	}
+}
+
+func (e *Engine) prunePeers(now time.Time) {
+	if e.cfg.PeerTTL == 0 {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for id, peer := range e.peers {
+		if now.Sub(peer.LastSeen) > e.cfg.PeerTTL {
+			delete(e.peers, id)
+		}
+	}
+}
+
+func routeKey(route routing.Route) string {
+	return route.Destination.String() + "|" + route.Gateway.String() + "|" + route.Interface + "|" + strconv.Itoa(route.Metric)
 }
 
 func routeExists(routes []routing.Route, route routing.Route) bool {

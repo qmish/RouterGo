@@ -38,6 +38,7 @@ ids:
   window_seconds: 10
   rate_threshold: 200
   portscan_threshold: 20
+  unique_dst_threshold: 10
   behavior_action: ALERT
   alert_limit: 1000
 
@@ -58,6 +59,7 @@ p2p:
   listen_addr: :5355
   multicast_addr: 224.0.0.251:5355
   sync_interval: 10
+  peer_ttl_seconds: 30
 
 proxy:
   enabled: false

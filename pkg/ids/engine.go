@@ -41,11 +41,12 @@ type Alert struct {
 }
 
 type Config struct {
-	Window          time.Duration
-	RateThreshold   int
-	PortScanThreshold int
-	BehaviorAction  Action
-	AlertLimit      int
+	Window             time.Duration
+	RateThreshold      int
+	PortScanThreshold  int
+	UniqueDstThreshold int
+	BehaviorAction     Action
+	AlertLimit         int
 }
 
 type Engine struct {
@@ -61,6 +62,7 @@ type ipStats struct {
 	windowStart time.Time
 	count       int
 	ports       map[int]struct{}
+	dsts        map[string]struct{}
 }
 
 type Result struct {
@@ -77,6 +79,9 @@ func NewEngine(cfg Config) *Engine {
 	}
 	if cfg.PortScanThreshold == 0 {
 		cfg.PortScanThreshold = 20
+	}
+	if cfg.UniqueDstThreshold == 0 {
+		cfg.UniqueDstThreshold = 10
 	}
 	if cfg.BehaviorAction == "" {
 		cfg.BehaviorAction = ActionAlert
@@ -194,6 +199,7 @@ func (e *Engine) matchBehavior(pkt network.Packet) (Result, bool) {
 		st = &ipStats{
 			windowStart: now,
 			ports:       map[int]struct{}{},
+			dsts:        map[string]struct{}{},
 		}
 		e.stats[key] = st
 	}
@@ -202,11 +208,15 @@ func (e *Engine) matchBehavior(pkt network.Packet) (Result, bool) {
 		st.windowStart = now
 		st.count = 0
 		st.ports = map[int]struct{}{}
+		st.dsts = map[string]struct{}{}
 	}
 
 	st.count++
 	if pkt.Metadata.DstPort != 0 {
 		st.ports[pkt.Metadata.DstPort] = struct{}{}
+	}
+	if pkt.Metadata.DstIP != nil {
+		st.dsts[pkt.Metadata.DstIP.String()] = struct{}{}
 	}
 
 	if st.count >= e.cfg.RateThreshold {
@@ -229,6 +239,21 @@ func (e *Engine) matchBehavior(pkt network.Packet) (Result, bool) {
 			Type:      "PORT_SCAN",
 			Severity:  "medium",
 			Reason:    "port_scan",
+			SrcIP:     pkt.Metadata.SrcIP.String(),
+			DstIP:     pkt.Metadata.DstIP.String(),
+			SrcPort:   pkt.Metadata.SrcPort,
+			DstPort:   pkt.Metadata.DstPort,
+			Protocol:  pkt.Metadata.Protocol,
+			Timestamp: now,
+		})
+		return Result{Drop: e.cfg.BehaviorAction == ActionDrop, Alert: &alert}, true
+	}
+
+	if e.cfg.UniqueDstThreshold > 0 && len(st.dsts) >= e.cfg.UniqueDstThreshold {
+		alert := e.addAlert(Alert{
+			Type:      "DST_SWEEP",
+			Severity:  "medium",
+			Reason:    "unique_dst_threshold",
 			SrcIP:     pkt.Metadata.SrcIP.String(),
 			DstIP:     pkt.Metadata.DstIP.String(),
 			SrcPort:   pkt.Metadata.SrcPort,

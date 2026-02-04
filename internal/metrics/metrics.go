@@ -14,32 +14,32 @@ import (
 )
 
 type Metrics struct {
-	PacketsTotal    prometheus.Counter
-	BytesTotal      prometheus.Counter
-	ErrorsTotal     prometheus.Counter
-	DropsTotal      prometheus.Counter
-	DropsByReason   *prometheus.CounterVec
-	QoSDropsByClass *prometheus.CounterVec
-	RxPacketsTotal  prometheus.Counter
-	TxPacketsTotal  prometheus.Counter
-	IDSAlertsTotal  prometheus.Counter
-	IDSDropsTotal   prometheus.Counter
-	ConfigApplyTotal        prometheus.Counter
-	ConfigRollbackTotal     prometheus.Counter
-	ConfigApplyFailedTotal  prometheus.Counter
-	P2PPeersTotal           prometheus.Counter
-	P2PRoutesSyncedTotal    prometheus.Counter
-	ProxyCacheHitsTotal     prometheus.Counter
-	ProxyCacheMissTotal     prometheus.Counter
-	ProxyCompressTotal      prometheus.Counter
-	packetsCount    atomic.Uint64
-	bytesCount      atomic.Uint64
-	errorsCount     atomic.Uint64
-	dropsCount      atomic.Uint64
-	rxPacketsCount  atomic.Uint64
-	txPacketsCount  atomic.Uint64
-	idsAlertsCount  atomic.Uint64
-	idsDropsCount   atomic.Uint64
+	PacketsTotal           prometheus.Counter
+	BytesTotal             prometheus.Counter
+	ErrorsTotal            prometheus.Counter
+	DropsTotal             prometheus.Counter
+	DropsByReason          *prometheus.CounterVec
+	QoSDropsByClass        *prometheus.CounterVec
+	RxPacketsTotal         prometheus.Counter
+	TxPacketsTotal         prometheus.Counter
+	IDSAlertsTotal         prometheus.Counter
+	IDSDropsTotal          prometheus.Counter
+	ConfigApplyTotal       prometheus.Counter
+	ConfigRollbackTotal    prometheus.Counter
+	ConfigApplyFailedTotal prometheus.Counter
+	P2PPeersTotal          prometheus.Counter
+	P2PRoutesSyncedTotal   prometheus.Counter
+	ProxyCacheHitsTotal    prometheus.Counter
+	ProxyCacheMissTotal    prometheus.Counter
+	ProxyCompressTotal     prometheus.Counter
+	packetsCount           atomic.Uint64
+	bytesCount             atomic.Uint64
+	errorsCount            atomic.Uint64
+	dropsCount             atomic.Uint64
+	rxPacketsCount         atomic.Uint64
+	txPacketsCount         atomic.Uint64
+	idsAlertsCount         atomic.Uint64
+	idsDropsCount          atomic.Uint64
 	configApplyCount       atomic.Uint64
 	configRollbackCount    atomic.Uint64
 	configApplyFailedCount atomic.Uint64
@@ -48,9 +48,9 @@ type Metrics struct {
 	proxyCacheHitsCount    atomic.Uint64
 	proxyCacheMissCount    atomic.Uint64
 	proxyCompressCount     atomic.Uint64
-	mu              sync.Mutex
-	dropsByReason   map[string]uint64
-	qosDropsByClass map[string]uint64
+	mu                     sync.Mutex
+	dropsByReason          map[string]uint64
+	qosDropsByClass        map[string]uint64
 }
 
 func New() *Metrics {
@@ -266,24 +266,24 @@ func (m *Metrics) IncProxyCompress() {
 }
 
 type Snapshot struct {
-	Packets         uint64
-	Bytes           uint64
-	Errors          uint64
-	Drops           uint64
-	DropsByReason   map[string]uint64
-	QoSDropsByClass map[string]uint64
-	RxPackets       uint64
-	TxPackets       uint64
-	IDSAlerts       uint64
-	IDSDrops        uint64
-	ConfigApply     uint64
-	ConfigRollback  uint64
+	Packets           uint64
+	Bytes             uint64
+	Errors            uint64
+	Drops             uint64
+	DropsByReason     map[string]uint64
+	QoSDropsByClass   map[string]uint64
+	RxPackets         uint64
+	TxPackets         uint64
+	IDSAlerts         uint64
+	IDSDrops          uint64
+	ConfigApply       uint64
+	ConfigRollback    uint64
 	ConfigApplyFailed uint64
-	P2PPeers       uint64
-	P2PRoutesSynced uint64
-	ProxyCacheHits uint64
-	ProxyCacheMiss uint64
-	ProxyCompress  uint64
+	P2PPeers          uint64
+	P2PRoutesSynced   uint64
+	ProxyCacheHits    uint64
+	ProxyCacheMiss    uint64
+	ProxyCompress     uint64
 }
 
 func (m *Metrics) Snapshot() Snapshot {
@@ -298,24 +298,24 @@ func (m *Metrics) Snapshot() Snapshot {
 	}
 	m.mu.Unlock()
 	return Snapshot{
-		Packets:         m.packetsCount.Load(),
-		Bytes:           m.bytesCount.Load(),
-		Errors:          m.errorsCount.Load(),
-		Drops:           m.dropsCount.Load(),
-		DropsByReason:   reasons,
-		QoSDropsByClass: qosDrops,
-		RxPackets:       m.rxPacketsCount.Load(),
-		TxPackets:       m.txPacketsCount.Load(),
-		IDSAlerts:       m.idsAlertsCount.Load(),
-		IDSDrops:        m.idsDropsCount.Load(),
-		ConfigApply:     m.configApplyCount.Load(),
-		ConfigRollback:  m.configRollbackCount.Load(),
+		Packets:           m.packetsCount.Load(),
+		Bytes:             m.bytesCount.Load(),
+		Errors:            m.errorsCount.Load(),
+		Drops:             m.dropsCount.Load(),
+		DropsByReason:     reasons,
+		QoSDropsByClass:   qosDrops,
+		RxPackets:         m.rxPacketsCount.Load(),
+		TxPackets:         m.txPacketsCount.Load(),
+		IDSAlerts:         m.idsAlertsCount.Load(),
+		IDSDrops:          m.idsDropsCount.Load(),
+		ConfigApply:       m.configApplyCount.Load(),
+		ConfigRollback:    m.configRollbackCount.Load(),
 		ConfigApplyFailed: m.configApplyFailedCount.Load(),
-		P2PPeers:       m.p2pPeersCount.Load(),
-		P2PRoutesSynced: m.p2pRoutesSyncedCount.Load(),
-		ProxyCacheHits: m.proxyCacheHitsCount.Load(),
-		ProxyCacheMiss: m.proxyCacheMissCount.Load(),
-		ProxyCompress:  m.proxyCompressCount.Load(),
+		P2PPeers:          m.p2pPeersCount.Load(),
+		P2PRoutesSynced:   m.p2pRoutesSyncedCount.Load(),
+		ProxyCacheHits:    m.proxyCacheHitsCount.Load(),
+		ProxyCacheMiss:    m.proxyCacheMissCount.Load(),
+		ProxyCompress:     m.proxyCompressCount.Load(),
 	}
 }
 

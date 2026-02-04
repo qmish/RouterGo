@@ -35,10 +35,10 @@ type Stats struct {
 }
 
 type Proxy struct {
-	cfg    Config
-	cache  *Cache
-	client *http.Client
-	stats  Stats
+	cfg        Config
+	cache      *Cache
+	client     *http.Client
+	stats      Stats
 	onHit      func()
 	onMiss     func()
 	onCompress func()
@@ -107,7 +107,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "upstream error", http.StatusBadGateway)
 		return
 	}
-	p.cache.Set(key, resp)
+	if isCacheable(resp) {
+		p.cache.Set(key, resp)
+	}
 	writeResponse(w, resp, r, p.cfg, p.onCompress)
 }
 
@@ -219,6 +221,20 @@ func copyHeaders(dst, src http.Header) {
 			dst.Add(k, val)
 		}
 	}
+}
+
+func isCacheable(resp *CacheValue) bool {
+	if resp == nil {
+		return false
+	}
+	if resp.Status < 200 || resp.Status >= 300 {
+		return false
+	}
+	cc, ok := resp.Headers["Cache-Control"]
+	if ok && strings.Contains(strings.ToLower(cc), "no-store") {
+		return false
+	}
+	return true
 }
 
 func StartHTTPServer(ctx context.Context, addr string, handler http.Handler) error {

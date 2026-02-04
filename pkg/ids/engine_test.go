@@ -1,6 +1,7 @@
 package ids
 
 import (
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -42,10 +43,10 @@ func TestSignatureRuleMatch(t *testing.T) {
 
 func TestRateSpikeBehavior(t *testing.T) {
 	engine := NewEngine(Config{
-		Window:        5 * time.Second,
-		RateThreshold: 3,
+		Window:         5 * time.Second,
+		RateThreshold:  3,
 		BehaviorAction: ActionAlert,
-		AlertLimit:    10,
+		AlertLimit:     10,
 	})
 	now := time.Now()
 	engine.nowFunc = func() time.Time { return now }
@@ -73,10 +74,10 @@ func TestRateSpikeBehavior(t *testing.T) {
 
 func TestPortScanBehavior(t *testing.T) {
 	engine := NewEngine(Config{
-		Window:           5 * time.Second,
+		Window:            5 * time.Second,
 		PortScanThreshold: 3,
-		BehaviorAction:   ActionDrop,
-		AlertLimit:       10,
+		BehaviorAction:    ActionDrop,
+		AlertLimit:        10,
 	})
 	now := time.Now()
 	engine.nowFunc = func() time.Time { return now }
@@ -106,5 +107,41 @@ func TestPortScanBehavior(t *testing.T) {
 	}
 	if !res.Drop {
 		t.Fatalf("expected drop for port scan")
+	}
+}
+
+func TestUniqueDstBehavior(t *testing.T) {
+	engine := NewEngine(Config{
+		Window:             5 * time.Second,
+		UniqueDstThreshold: 3,
+		BehaviorAction:     ActionAlert,
+		AlertLimit:         10,
+	})
+	now := time.Now()
+	engine.nowFunc = func() time.Time { return now }
+
+	for i := 0; i < 2; i++ {
+		engine.Detect(network.Packet{
+			Metadata: network.PacketMetadata{
+				Protocol: "TCP",
+				SrcIP:    net.ParseIP("10.0.0.3"),
+				DstIP:    net.ParseIP(fmt.Sprintf("1.1.1.%d", i+1)),
+			},
+		})
+	}
+
+	res := engine.Detect(network.Packet{
+		Metadata: network.PacketMetadata{
+			Protocol: "TCP",
+			SrcIP:    net.ParseIP("10.0.0.3"),
+			DstIP:    net.ParseIP("1.1.1.9"),
+		},
+	})
+
+	if res.Alert == nil || res.Alert.Type != "DST_SWEEP" {
+		t.Fatalf("expected dst sweep alert")
+	}
+	if res.Drop {
+		t.Fatalf("expected alert-only behavior")
 	}
 }

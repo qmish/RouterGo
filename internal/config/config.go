@@ -8,20 +8,20 @@ import (
 )
 
 type Config struct {
-	Interfaces []InterfaceConfig    `mapstructure:"interfaces"`
-	Routes     []RouteConfig        `mapstructure:"routes"`
-	Firewall   []FirewallRuleConfig `mapstructure:"firewall"`
+	Interfaces       []InterfaceConfig      `mapstructure:"interfaces"`
+	Routes           []RouteConfig          `mapstructure:"routes"`
+	Firewall         []FirewallRuleConfig   `mapstructure:"firewall"`
 	FirewallDefaults FirewallDefaultsConfig `mapstructure:"firewall_defaults"`
-	NAT        []NATRuleConfig      `mapstructure:"nat"`
-	QoS        []QoSClassConfig     `mapstructure:"qos"`
-	IDS        IDSConfig            `mapstructure:"ids"`
-	SelfHeal   SelfHealConfig       `mapstructure:"selfheal"`
-	Dashboard  DashboardConfig      `mapstructure:"dashboard"`
-	P2P        P2PConfig            `mapstructure:"p2p"`
-	Proxy      ProxyConfig          `mapstructure:"proxy"`
-	API        APIConfig            `mapstructure:"api"`
-	Metrics    MetricsConfig        `mapstructure:"metrics"`
-	Logging    LoggingConfig        `mapstructure:"logging"`
+	NAT              []NATRuleConfig        `mapstructure:"nat"`
+	QoS              []QoSClassConfig       `mapstructure:"qos"`
+	IDS              IDSConfig              `mapstructure:"ids"`
+	SelfHeal         SelfHealConfig         `mapstructure:"selfheal"`
+	Dashboard        DashboardConfig        `mapstructure:"dashboard"`
+	P2P              P2PConfig              `mapstructure:"p2p"`
+	Proxy            ProxyConfig            `mapstructure:"proxy"`
+	API              APIConfig              `mapstructure:"api"`
+	Metrics          MetricsConfig          `mapstructure:"metrics"`
+	Logging          LoggingConfig          `mapstructure:"logging"`
 }
 
 type InterfaceConfig struct {
@@ -76,12 +76,13 @@ type QoSClassConfig struct {
 }
 
 type IDSConfig struct {
-	Enabled           bool   `mapstructure:"enabled"`
-	WindowSeconds     int    `mapstructure:"window_seconds"`
-	RateThreshold     int    `mapstructure:"rate_threshold"`
-	PortScanThreshold int    `mapstructure:"portscan_threshold"`
-	BehaviorAction    string `mapstructure:"behavior_action"`
-	AlertLimit        int    `mapstructure:"alert_limit"`
+	Enabled            bool   `mapstructure:"enabled"`
+	WindowSeconds      int    `mapstructure:"window_seconds"`
+	RateThreshold      int    `mapstructure:"rate_threshold"`
+	PortScanThreshold  int    `mapstructure:"portscan_threshold"`
+	UniqueDstThreshold int    `mapstructure:"unique_dst_threshold"`
+	BehaviorAction     string `mapstructure:"behavior_action"`
+	AlertLimit         int    `mapstructure:"alert_limit"`
 }
 
 type SelfHealConfig struct {
@@ -97,27 +98,28 @@ type DashboardConfig struct {
 }
 
 type P2PConfig struct {
-	Enabled       bool   `mapstructure:"enabled"`
-	PeerID        string `mapstructure:"peer_id"`
-	Discovery     bool   `mapstructure:"discovery"`
-	ListenAddr    string `mapstructure:"listen_addr"`
-	MulticastAddr string `mapstructure:"multicast_addr"`
-	SyncInterval  int    `mapstructure:"sync_interval"`
+	Enabled        bool   `mapstructure:"enabled"`
+	PeerID         string `mapstructure:"peer_id"`
+	Discovery      bool   `mapstructure:"discovery"`
+	ListenAddr     string `mapstructure:"listen_addr"`
+	MulticastAddr  string `mapstructure:"multicast_addr"`
+	SyncInterval   int    `mapstructure:"sync_interval"`
+	PeerTTLSeconds int    `mapstructure:"peer_ttl_seconds"`
 }
 
 type ProxyConfig struct {
-	Enabled        bool   `mapstructure:"enabled"`
-	ListenAddr     string `mapstructure:"listen_addr"`
-	H3Addr         string `mapstructure:"h3_addr"`
-	Upstream       string `mapstructure:"upstream"`
-	CacheSize      int    `mapstructure:"cache_size"`
-	CacheTTLSeconds int   `mapstructure:"cache_ttl_seconds"`
-	EnableGzip     bool   `mapstructure:"enable_gzip"`
-	EnableBrotli   bool   `mapstructure:"enable_brotli"`
-	EnableH3       bool   `mapstructure:"enable_h3"`
-	HSTS           bool   `mapstructure:"hsts"`
-	CertFile       string `mapstructure:"cert_file"`
-	KeyFile        string `mapstructure:"key_file"`
+	Enabled         bool   `mapstructure:"enabled"`
+	ListenAddr      string `mapstructure:"listen_addr"`
+	H3Addr          string `mapstructure:"h3_addr"`
+	Upstream        string `mapstructure:"upstream"`
+	CacheSize       int    `mapstructure:"cache_size"`
+	CacheTTLSeconds int    `mapstructure:"cache_ttl_seconds"`
+	EnableGzip      bool   `mapstructure:"enable_gzip"`
+	EnableBrotli    bool   `mapstructure:"enable_brotli"`
+	EnableH3        bool   `mapstructure:"enable_h3"`
+	HSTS            bool   `mapstructure:"hsts"`
+	CertFile        string `mapstructure:"cert_file"`
+	KeyFile         string `mapstructure:"key_file"`
 }
 
 type APIConfig struct {
@@ -196,6 +198,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.IDS.PortScanThreshold == 0 {
 		cfg.IDS.PortScanThreshold = 20
 	}
+	if cfg.IDS.UniqueDstThreshold == 0 {
+		cfg.IDS.UniqueDstThreshold = 10
+	}
 	if cfg.IDS.BehaviorAction == "" {
 		cfg.IDS.BehaviorAction = "ALERT"
 	}
@@ -216,6 +221,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.P2P.SyncInterval == 0 {
 		cfg.P2P.SyncInterval = 10
+	}
+	if cfg.P2P.PeerTTLSeconds == 0 {
+		cfg.P2P.PeerTTLSeconds = cfg.P2P.SyncInterval * 3
 	}
 	if cfg.P2P.PeerID == "" {
 		cfg.P2P.PeerID = "node-1"
