@@ -280,6 +280,7 @@ func buildQoSQueue(cfg *config.Config) *qos.QueueManager {
 			DstPort:       qc.DstPort,
 			RateLimitKbps: qc.RateLimitKbps,
 			Priority:      qc.Priority,
+			MaxQueue:      qc.MaxQueue,
 		})
 	}
 	return qos.NewQueueManager(classes)

@@ -30,6 +30,7 @@ qos:
     dst_port: 5060
     rate_limit_kbps: 512
     priority: 10
+    max_queue: 100
 
 api:
   address: :8080
