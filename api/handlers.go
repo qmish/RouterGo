@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"router-go/internal/config"
+	"router-go/internal/logger"
 	"router-go/internal/metrics"
 	"router-go/pkg/firewall"
 	"router-go/pkg/flow"
@@ -34,6 +35,8 @@ type Handlers struct {
 	Proxy     *proxy.Proxy
 	Enrich    *enrich.Service
 	EnrichTimeout time.Duration
+	Security  *config.SecurityConfig
+	Log       *logger.Logger
 	ConfigMgr *config.Manager
 	Metrics   *metrics.Metrics
 }

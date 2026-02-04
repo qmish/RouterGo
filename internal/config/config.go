@@ -20,6 +20,7 @@ type Config struct {
 	P2P              P2PConfig              `mapstructure:"p2p"`
 	Proxy            ProxyConfig            `mapstructure:"proxy"`
 	Integrations     IntegrationsConfig     `mapstructure:"integrations"`
+	Security         SecurityConfig         `mapstructure:"security"`
 	API              APIConfig              `mapstructure:"api"`
 	Metrics          MetricsConfig          `mapstructure:"metrics"`
 	Logging          LoggingConfig          `mapstructure:"logging"`
@@ -165,6 +166,26 @@ type MetricsExportConfig struct {
 	IntervalSeconds int    `mapstructure:"interval_seconds"`
 }
 
+type SecurityConfig struct {
+	Enabled     bool        `mapstructure:"enabled"`
+	RequireAuth bool        `mapstructure:"require_auth"`
+	Tokens      []TokenConfig `mapstructure:"tokens"`
+	TLS         TLSConfig   `mapstructure:"tls"`
+}
+
+type TokenConfig struct {
+	Role  string `mapstructure:"role"`
+	Value string `mapstructure:"value"`
+}
+
+type TLSConfig struct {
+	Enabled        bool   `mapstructure:"enabled"`
+	CertFile       string `mapstructure:"cert_file"`
+	KeyFile        string `mapstructure:"key_file"`
+	ClientCAFile   string `mapstructure:"client_ca_file"`
+	RequireClientCert bool `mapstructure:"require_client_cert"`
+}
+
 type APIConfig struct {
 	Address string `mapstructure:"address"`
 }
@@ -285,6 +306,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Integrations.Metrics.IntervalSeconds == 0 {
 		cfg.Integrations.Metrics.IntervalSeconds = 10
+	}
+	if cfg.Security.RequireAuth == false && cfg.Security.Enabled {
+		cfg.Security.RequireAuth = true
 	}
 }
 
