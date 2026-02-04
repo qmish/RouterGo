@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -89,7 +90,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	key := r.Method + ":" + r.URL.String()
-	if cached, ok := p.cache.Get(key); ok {
+	cached, ok, expired := p.cache.GetEntry(key)
+	if ok && cached != nil && matchVary(cached, r) && !expired {
 		p.stats.CacheHits++
 		if p.onHit != nil {
 			p.onHit()
@@ -102,18 +104,23 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.onMiss()
 	}
 
-	resp, err := p.fetch(r)
+	resp, err := p.fetchConditional(r, cached, expired)
 	if err != nil {
 		http.Error(w, "upstream error", http.StatusBadGateway)
 		return
 	}
 	if isCacheable(resp) {
-		p.cache.Set(key, resp)
+		ttl := p.cacheTTL(resp)
+		p.cache.SetWithTTL(key, resp, ttl)
 	}
 	writeResponse(w, resp, r, p.cfg, p.onCompress)
 }
 
 func (p *Proxy) fetch(r *http.Request) (*CacheValue, error) {
+	return p.fetchWithHeaders(r, nil)
+}
+
+func (p *Proxy) fetchWithHeaders(r *http.Request, extra http.Header) (*CacheValue, error) {
 	upstreamURL, err := url.Parse(p.cfg.Upstream)
 	if err != nil {
 		return nil, err
@@ -126,6 +133,11 @@ func (p *Proxy) fetch(r *http.Request) (*CacheValue, error) {
 		return nil, err
 	}
 	copyHeaders(req.Header, r.Header)
+	for k, v := range extra {
+		for _, val := range v {
+			req.Header.Add(k, val)
+		}
+	}
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -142,11 +154,33 @@ func (p *Proxy) fetch(r *http.Request) (*CacheValue, error) {
 			headers[k] = v[0]
 		}
 	}
-	return &CacheValue{
+	value := &CacheValue{
 		Status:  resp.StatusCode,
 		Headers: headers,
 		Body:    body,
-	}, nil
+		StoredAt: time.Now(),
+		MaxAgeSeconds: parseMaxAge(headers["Cache-Control"]),
+		VaryHeaders: extractVaryHeaders(headers["Vary"], r),
+		ETag: headers["ETag"],
+	}
+	return value, nil
+}
+
+func (p *Proxy) fetchConditional(r *http.Request, cached *CacheValue, expired bool) (*CacheValue, error) {
+	if cached == nil || !expired || cached.ETag == "" {
+		return p.fetch(r)
+	}
+	extra := http.Header{}
+	extra.Set("If-None-Match", cached.ETag)
+	resp, err := p.fetchWithHeaders(r, extra)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status == http.StatusNotModified {
+		cached.StoredAt = time.Now()
+		return cached, nil
+	}
+	return resp, nil
 }
 
 func (p *Proxy) proxyPass(w http.ResponseWriter, r *http.Request) {
@@ -233,6 +267,67 @@ func isCacheable(resp *CacheValue) bool {
 	cc, ok := resp.Headers["Cache-Control"]
 	if ok && strings.Contains(strings.ToLower(cc), "no-store") {
 		return false
+	}
+	if strings.Contains(strings.ToLower(cc), "no-cache") {
+		return false
+	}
+	if resp.MaxAgeSeconds == 0 {
+		return false
+	}
+	return true
+}
+
+func (p *Proxy) cacheTTL(resp *CacheValue) time.Duration {
+	if resp.MaxAgeSeconds > 0 {
+		return time.Duration(resp.MaxAgeSeconds) * time.Second
+	}
+	if resp.MaxAgeSeconds == 0 {
+		return 0
+	}
+	return time.Duration(p.cfg.CacheTTLSeconds) * time.Second
+}
+
+func parseMaxAge(cc string) int {
+	cc = strings.ToLower(cc)
+	if cc == "" {
+		return -1
+	}
+	parts := strings.Split(cc, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, "max-age=") {
+			value := strings.TrimPrefix(part, "max-age=")
+			if sec, err := strconv.Atoi(value); err == nil {
+				return sec
+			}
+		}
+	}
+	return -1
+}
+
+func extractVaryHeaders(vary string, r *http.Request) map[string]string {
+	if vary == "" {
+		return nil
+	}
+	headers := map[string]string{}
+	for _, part := range strings.Split(vary, ",") {
+		name := strings.TrimSpace(part)
+		if name == "" {
+			continue
+		}
+		headers[name] = r.Header.Get(name)
+	}
+	return headers
+}
+
+func matchVary(value *CacheValue, r *http.Request) bool {
+	if value == nil || len(value.VaryHeaders) == 0 {
+		return true
+	}
+	for name, cached := range value.VaryHeaders {
+		if r.Header.Get(name) != cached {
+			return false
+		}
 	}
 	return true
 }
