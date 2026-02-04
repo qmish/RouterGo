@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net"
 	"testing"
 
 	"router-go/internal/metrics"
 	"router-go/pkg/nat"
+	"router-go/pkg/network"
 	"router-go/pkg/qos"
 	"router-go/pkg/routing"
 
@@ -55,6 +57,44 @@ func TestAddAndGetNAT(t *testing.T) {
 	}
 	if !bytes.Contains(w.Body.Bytes(), []byte("203.0.113.10")) {
 		t.Fatalf("expected nat rule in response")
+	}
+}
+
+func TestResetNATStats(t *testing.T) {
+	table := nat.NewTable([]nat.Rule{
+		{
+			Type:  nat.TypeSNAT,
+			ToIP:  net.ParseIP("203.0.113.10"),
+		},
+	})
+	h := &Handlers{
+		Routes:  routing.NewTable(nil),
+		NAT:     table,
+		QoS:     qos.NewQueueManager(nil),
+		Metrics: metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	pkt := network.Packet{
+		Metadata: network.PacketMetadata{
+			Protocol: "TCP",
+			SrcIP:    net.ParseIP("10.1.2.3"),
+			DstIP:    net.ParseIP("1.1.1.1"),
+			SrcPort:  1234,
+			DstPort:  80,
+		},
+	}
+	table.Apply(pkt)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/nat/reset", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	stats := table.RulesWithStats()
+	if stats[0].Hits != 0 {
+		t.Fatalf("expected hits reset to 0, got %d", stats[0].Hits)
 	}
 }
 

@@ -87,6 +87,14 @@ func (t *Table) RulesWithStats() []RuleStat {
 	return out
 }
 
+func (t *Table) ResetStats() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for i := range t.hits {
+		t.hits[i] = 0
+	}
+}
+
 func (t *Table) Apply(pkt network.Packet) network.Packet {
 	t.mu.Lock()
 	defer t.mu.Unlock()
