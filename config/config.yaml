@@ -41,6 +41,10 @@ ids:
   unique_dst_threshold: 10
   behavior_action: ALERT
   alert_limit: 1000
+  whitelist_src:
+    - 192.168.0.0/16
+  whitelist_dst:
+    - 127.0.0.0/8
 
 selfheal:
   enabled: true

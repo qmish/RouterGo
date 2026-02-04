@@ -65,6 +65,46 @@ func TestAddAndGetIDSRules(t *testing.T) {
 	}
 }
 
+func TestUpdateAndDeleteIDSRule(t *testing.T) {
+	router, _ := setupIDSRouter()
+	payload := map[string]any{
+		"name":     "sig",
+		"action":   "ALERT",
+		"protocol": "TCP",
+		"dst_port": 80,
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/ids/rules", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	update := map[string]any{
+		"action":   "DROP",
+		"protocol": "TCP",
+		"dst_port": 80,
+		"priority": 10,
+	}
+	body, _ = json.Marshal(update)
+	req = httptest.NewRequest(http.MethodPut, "/api/ids/rules/sig", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/api/ids/rules/sig", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
 func TestGetIDSAlerts(t *testing.T) {
 	router, engine := setupIDSRouter()
 
@@ -75,6 +115,7 @@ func TestGetIDSAlerts(t *testing.T) {
 		SrcNet:          &net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.CIDRMask(8, 32)},
 		DstPort:         80,
 		PayloadContains: "GET",
+		Enabled:         true,
 	})
 
 	engine.Detect(network.Packet{
@@ -87,7 +128,7 @@ func TestGetIDSAlerts(t *testing.T) {
 		},
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/ids/alerts", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/ids/alerts?type=SIGNATURE", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {

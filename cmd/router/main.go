@@ -166,6 +166,8 @@ func processPacket(
 		res := idsEngine.Detect(pkt)
 		if res.Alert != nil {
 			metricsSrv.IncIDSAlert()
+			metricsSrv.IncIDSAlertType(res.Alert.Type)
+			metricsSrv.IncIDSAlertRule(res.Alert.Reason)
 		}
 		if res.Drop {
 			metricsSrv.IncIDSDrop()
@@ -360,6 +362,8 @@ func buildIDS(cfg *config.Config) *ids.Engine {
 		UniqueDstThreshold: cfg.IDS.UniqueDstThreshold,
 		BehaviorAction:     action,
 		AlertLimit:         cfg.IDS.AlertLimit,
+		WhitelistSrc:       parseCIDRs(cfg.IDS.WhitelistSrc),
+		WhitelistDst:       parseCIDRs(cfg.IDS.WhitelistDst),
 	})
 }
 
@@ -453,4 +457,16 @@ func isLocalIP(ip net.IP, localIPs []net.IP) bool {
 		}
 	}
 	return false
+}
+
+func parseCIDRs(values []string) []*net.IPNet {
+	out := make([]*net.IPNet, 0, len(values))
+	for _, value := range values {
+		_, netw, err := net.ParseCIDR(value)
+		if err != nil {
+			continue
+		}
+		out = append(out, netw)
+	}
+	return out
 }

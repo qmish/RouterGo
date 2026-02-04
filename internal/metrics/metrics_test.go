@@ -18,6 +18,8 @@ func TestMetricsSnapshot(t *testing.T) {
 	m.IncTxPackets()
 	m.IncIDSAlert()
 	m.IncIDSDrop()
+	m.IncIDSAlertType("SIGNATURE")
+	m.IncIDSAlertRule("test-rule")
 	m.IncConfigApply()
 	m.IncConfigRollback()
 	m.IncConfigApplyFailed()
@@ -60,6 +62,12 @@ func TestMetricsSnapshot(t *testing.T) {
 	}
 	if s.IDSDrops != 1 {
 		t.Fatalf("expected ids drops 1, got %d", s.IDSDrops)
+	}
+	if s.IDSAlertsByType["SIGNATURE"] != 1 {
+		t.Fatalf("expected ids alerts by type 1, got %d", s.IDSAlertsByType["SIGNATURE"])
+	}
+	if s.IDSAlertsByRule["test-rule"] != 1 {
+		t.Fatalf("expected ids alerts by rule 1, got %d", s.IDSAlertsByRule["test-rule"])
 	}
 	if s.ConfigApply != 1 {
 		t.Fatalf("expected config apply 1, got %d", s.ConfigApply)
