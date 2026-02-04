@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"sync/atomic"
 
 	"router-go/internal/config"
@@ -17,10 +18,13 @@ type Metrics struct {
 	BytesTotal   prometheus.Counter
 	ErrorsTotal  prometheus.Counter
 	DropsTotal   prometheus.Counter
+	DropsByReason *prometheus.CounterVec
 	packetsCount atomic.Uint64
 	bytesCount   atomic.Uint64
 	errorsCount  atomic.Uint64
 	dropsCount   atomic.Uint64
+	mu           sync.Mutex
+	dropsByReason map[string]uint64
 }
 
 func New() *Metrics {
@@ -45,11 +49,16 @@ func NewWithRegistry(reg prometheus.Registerer) *Metrics {
 			Name: "router_drops_total",
 			Help: "Total number of dropped packets",
 		}),
+		DropsByReason: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "router_drops_by_reason_total",
+			Help: "Dropped packets by reason",
+		}, []string{"reason"}),
+		dropsByReason: map[string]uint64{},
 	}
 	if reg == nil {
 		reg = prometheus.DefaultRegisterer
 	}
-	reg.MustRegister(m.PacketsTotal, m.BytesTotal, m.ErrorsTotal, m.DropsTotal)
+	reg.MustRegister(m.PacketsTotal, m.BytesTotal, m.ErrorsTotal, m.DropsTotal, m.DropsByReason)
 	return m
 }
 
@@ -76,19 +85,38 @@ func (m *Metrics) IncDrops() {
 	m.DropsTotal.Inc()
 }
 
+func (m *Metrics) IncDropReason(reason string) {
+	if reason == "" {
+		return
+	}
+	m.IncDrops()
+	m.DropsByReason.WithLabelValues(reason).Inc()
+	m.mu.Lock()
+	m.dropsByReason[reason]++
+	m.mu.Unlock()
+}
+
 type Snapshot struct {
 	Packets uint64
 	Bytes   uint64
 	Errors  uint64
 	Drops   uint64
+	DropsByReason map[string]uint64
 }
 
 func (m *Metrics) Snapshot() Snapshot {
+	m.mu.Lock()
+	reasons := make(map[string]uint64, len(m.dropsByReason))
+	for k, v := range m.dropsByReason {
+		reasons[k] = v
+	}
+	m.mu.Unlock()
 	return Snapshot{
-		Packets: m.packetsCount.Load(),
-		Bytes:   m.bytesCount.Load(),
-		Errors:  m.errorsCount.Load(),
-		Drops:   m.dropsCount.Load(),
+		Packets:       m.packetsCount.Load(),
+		Bytes:         m.bytesCount.Load(),
+		Errors:        m.errorsCount.Load(),
+		Drops:         m.dropsCount.Load(),
+		DropsByReason: reasons,
 	}
 }
 

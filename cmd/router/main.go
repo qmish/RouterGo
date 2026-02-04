@@ -115,6 +115,7 @@ func startPacketLoop(
 			meta, err := network.ParseIPMetadata(pkt.Data)
 			if err != nil {
 				metricsSrv.IncErrors()
+				metricsSrv.IncDropReason("parse")
 				continue
 			}
 			pkt.Metadata = meta
@@ -139,13 +140,14 @@ func processPacket(
 	pkt = natTable.Apply(pkt)
 	chain := determineChain(pkt, localIPs)
 	if firewallEngine.Evaluate(chain, pkt) != firewall.ActionAccept {
+		metricsSrv.IncDropReason("firewall")
 		return
 	}
 	if qosQueue == nil {
 		return
 	}
 	if ok := qosQueue.Enqueue(pkt); !ok {
-		metricsSrv.IncDrops()
+		metricsSrv.IncDropReason("qos")
 		return
 	}
 }
