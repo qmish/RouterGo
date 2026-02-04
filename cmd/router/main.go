@@ -16,6 +16,7 @@ import (
 	"router-go/internal/metrics"
 	"router-go/internal/platform"
 	"router-go/pkg/firewall"
+	"router-go/pkg/flow"
 	"router-go/pkg/ids"
 	"router-go/pkg/nat"
 	"router-go/pkg/network"
@@ -53,15 +54,20 @@ func main() {
 	natTable := buildNAT(cfg, log)
 	qosQueue := buildQoSQueue(cfg)
 	cfgManager := config.NewManager(cfg, config.DefaultHealthCheck)
+	flowEngine := flow.NewEngine()
 
 	router := gin.New()
 	router.Use(gin.Recovery())
+	if cfg.Dashboard.Enabled {
+		router.Static("/dashboard", cfg.Dashboard.StaticDir)
+	}
 	handlers := &api.Handlers{
 		Routes:   routeTable,
 		Firewall: firewallEngine,
 		IDS:      idsEngine,
 		NAT:      natTable,
 		QoS:      qosQueue,
+		Flow:     flowEngine,
 		ConfigMgr: cfgManager,
 		Metrics:  metricsSrv,
 	}
@@ -73,7 +79,7 @@ func main() {
 		}
 	}()
 
-	startPacketLoop(ctx, cfg, log, metricsSrv, routeTable, firewallEngine, idsEngine, natTable, qosQueue)
+	startPacketLoop(ctx, cfg, log, metricsSrv, routeTable, firewallEngine, idsEngine, natTable, qosQueue, flowEngine)
 	<-ctx.Done()
 	log.Info("shutdown", nil)
 }
@@ -88,6 +94,7 @@ func startPacketLoop(
 	idsEngine *ids.Engine,
 	natTable *nat.Table,
 	qosQueue *qos.QueueManager,
+	flowEngine *flow.Engine,
 ) {
 	if len(cfg.Interfaces) == 0 {
 		log.Warn("no interfaces configured", nil)
@@ -129,7 +136,7 @@ func startPacketLoop(
 
 			metricsSrv.IncPackets()
 			metricsSrv.AddBytes(len(pkt.Data))
-			processPacket(pkt, localIPs, routes, firewallEngine, idsEngine, natTable, qosQueue, metricsSrv)
+			processPacket(pkt, localIPs, routes, firewallEngine, idsEngine, natTable, qosQueue, metricsSrv, flowEngine)
 		}
 	}()
 }
@@ -143,8 +150,12 @@ func processPacket(
 	natTable *nat.Table,
 	qosQueue *qos.QueueManager,
 	metricsSrv *metrics.Metrics,
+	flowEngine *flow.Engine,
 ) {
 	_, _ = routes.Lookup(pkt.Metadata.DstIP)
+	if flowEngine != nil {
+		flowEngine.AddPacket(pkt)
+	}
 	if idsEngine != nil {
 		res := idsEngine.Detect(pkt)
 		if res.Alert != nil {

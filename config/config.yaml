@@ -47,6 +47,10 @@ selfheal:
   http_check_url: http://192.168.1.1/health
   timeout_seconds: 3
 
+dashboard:
+  enabled: true
+  static_dir: web
+
 api:
   address: :8080
 
