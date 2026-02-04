@@ -14,22 +14,26 @@ import (
 )
 
 type Metrics struct {
-	PacketsTotal  prometheus.Counter
-	BytesTotal    prometheus.Counter
-	ErrorsTotal   prometheus.Counter
-	DropsTotal    prometheus.Counter
-	DropsByReason *prometheus.CounterVec
+	PacketsTotal    prometheus.Counter
+	BytesTotal      prometheus.Counter
+	ErrorsTotal     prometheus.Counter
+	DropsTotal      prometheus.Counter
+	DropsByReason   *prometheus.CounterVec
 	QoSDropsByClass *prometheus.CounterVec
-	RxPacketsTotal prometheus.Counter
-	TxPacketsTotal prometheus.Counter
-	packetsCount  atomic.Uint64
-	bytesCount    atomic.Uint64
-	errorsCount   atomic.Uint64
-	dropsCount    atomic.Uint64
-	rxPacketsCount atomic.Uint64
-	txPacketsCount atomic.Uint64
-	mu            sync.Mutex
-	dropsByReason map[string]uint64
+	RxPacketsTotal  prometheus.Counter
+	TxPacketsTotal  prometheus.Counter
+	IDSAlertsTotal  prometheus.Counter
+	IDSDropsTotal   prometheus.Counter
+	packetsCount    atomic.Uint64
+	bytesCount      atomic.Uint64
+	errorsCount     atomic.Uint64
+	dropsCount      atomic.Uint64
+	rxPacketsCount  atomic.Uint64
+	txPacketsCount  atomic.Uint64
+	idsAlertsCount  atomic.Uint64
+	idsDropsCount   atomic.Uint64
+	mu              sync.Mutex
+	dropsByReason   map[string]uint64
 	qosDropsByClass map[string]uint64
 }
 
@@ -71,7 +75,15 @@ func NewWithRegistry(reg prometheus.Registerer) *Metrics {
 			Name: "router_tx_packets_total",
 			Help: "Total number of packets transmitted",
 		}),
-		dropsByReason: map[string]uint64{},
+		IDSAlertsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "router_ids_alerts_total",
+			Help: "Total number of IDS alerts",
+		}),
+		IDSDropsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "router_ids_drops_total",
+			Help: "Total number of IDS drops",
+		}),
+		dropsByReason:   map[string]uint64{},
 		qosDropsByClass: map[string]uint64{},
 	}
 	if reg == nil {
@@ -86,6 +98,8 @@ func NewWithRegistry(reg prometheus.Registerer) *Metrics {
 		m.QoSDropsByClass,
 		m.RxPacketsTotal,
 		m.TxPacketsTotal,
+		m.IDSAlertsTotal,
+		m.IDSDropsTotal,
 	)
 	return m
 }
@@ -145,15 +159,27 @@ func (m *Metrics) IncTxPackets() {
 	m.TxPacketsTotal.Inc()
 }
 
+func (m *Metrics) IncIDSAlert() {
+	m.idsAlertsCount.Add(1)
+	m.IDSAlertsTotal.Inc()
+}
+
+func (m *Metrics) IncIDSDrop() {
+	m.idsDropsCount.Add(1)
+	m.IDSDropsTotal.Inc()
+}
+
 type Snapshot struct {
-	Packets       uint64
-	Bytes         uint64
-	Errors        uint64
-	Drops         uint64
-	DropsByReason map[string]uint64
+	Packets         uint64
+	Bytes           uint64
+	Errors          uint64
+	Drops           uint64
+	DropsByReason   map[string]uint64
 	QoSDropsByClass map[string]uint64
-	RxPackets    uint64
-	TxPackets    uint64
+	RxPackets       uint64
+	TxPackets       uint64
+	IDSAlerts       uint64
+	IDSDrops        uint64
 }
 
 func (m *Metrics) Snapshot() Snapshot {
@@ -168,14 +194,16 @@ func (m *Metrics) Snapshot() Snapshot {
 	}
 	m.mu.Unlock()
 	return Snapshot{
-		Packets:       m.packetsCount.Load(),
-		Bytes:         m.bytesCount.Load(),
-		Errors:        m.errorsCount.Load(),
-		Drops:         m.dropsCount.Load(),
-		DropsByReason: reasons,
+		Packets:         m.packetsCount.Load(),
+		Bytes:           m.bytesCount.Load(),
+		Errors:          m.errorsCount.Load(),
+		Drops:           m.dropsCount.Load(),
+		DropsByReason:   reasons,
 		QoSDropsByClass: qosDrops,
-		RxPackets:     m.rxPacketsCount.Load(),
-		TxPackets:     m.txPacketsCount.Load(),
+		RxPackets:       m.rxPacketsCount.Load(),
+		TxPackets:       m.txPacketsCount.Load(),
+		IDSAlerts:       m.idsAlertsCount.Load(),
+		IDSDrops:        m.idsDropsCount.Load(),
 	}
 }
 

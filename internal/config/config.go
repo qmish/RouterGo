@@ -13,6 +13,7 @@ type Config struct {
 	FirewallDefaults FirewallDefaultsConfig `mapstructure:"firewall_defaults"`
 	NAT        []NATRuleConfig      `mapstructure:"nat"`
 	QoS        []QoSClassConfig     `mapstructure:"qos"`
+	IDS        IDSConfig            `mapstructure:"ids"`
 	API        APIConfig            `mapstructure:"api"`
 	Metrics    MetricsConfig        `mapstructure:"metrics"`
 	Logging    LoggingConfig        `mapstructure:"logging"`
@@ -69,6 +70,15 @@ type QoSClassConfig struct {
 	DropPolicy    string `mapstructure:"drop_policy"`
 }
 
+type IDSConfig struct {
+	Enabled           bool   `mapstructure:"enabled"`
+	WindowSeconds     int    `mapstructure:"window_seconds"`
+	RateThreshold     int    `mapstructure:"rate_threshold"`
+	PortScanThreshold int    `mapstructure:"portscan_threshold"`
+	BehaviorAction    string `mapstructure:"behavior_action"`
+	AlertLimit        int    `mapstructure:"alert_limit"`
+}
+
 type APIConfig struct {
 	Address string `mapstructure:"address"`
 }
@@ -115,6 +125,21 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Logging.Level == "" {
 		cfg.Logging.Level = "info"
+	}
+	if cfg.IDS.WindowSeconds == 0 {
+		cfg.IDS.WindowSeconds = 10
+	}
+	if cfg.IDS.RateThreshold == 0 {
+		cfg.IDS.RateThreshold = 200
+	}
+	if cfg.IDS.PortScanThreshold == 0 {
+		cfg.IDS.PortScanThreshold = 20
+	}
+	if cfg.IDS.BehaviorAction == "" {
+		cfg.IDS.BehaviorAction = "ALERT"
+	}
+	if cfg.IDS.AlertLimit == 0 {
+		cfg.IDS.AlertLimit = 1000
 	}
 }
 

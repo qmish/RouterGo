@@ -33,6 +33,14 @@ qos:
     max_queue: 100
     drop_policy: tail
 
+ids:
+  enabled: true
+  window_seconds: 10
+  rate_threshold: 200
+  portscan_threshold: 20
+  behavior_action: ALERT
+  alert_limit: 1000
+
 api:
   address: :8080
 
