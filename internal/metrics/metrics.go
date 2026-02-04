@@ -29,6 +29,9 @@ type Metrics struct {
 	ConfigApplyFailedTotal  prometheus.Counter
 	P2PPeersTotal           prometheus.Counter
 	P2PRoutesSyncedTotal    prometheus.Counter
+	ProxyCacheHitsTotal     prometheus.Counter
+	ProxyCacheMissTotal     prometheus.Counter
+	ProxyCompressTotal      prometheus.Counter
 	packetsCount    atomic.Uint64
 	bytesCount      atomic.Uint64
 	errorsCount     atomic.Uint64
@@ -42,6 +45,9 @@ type Metrics struct {
 	configApplyFailedCount atomic.Uint64
 	p2pPeersCount          atomic.Uint64
 	p2pRoutesSyncedCount   atomic.Uint64
+	proxyCacheHitsCount    atomic.Uint64
+	proxyCacheMissCount    atomic.Uint64
+	proxyCompressCount     atomic.Uint64
 	mu              sync.Mutex
 	dropsByReason   map[string]uint64
 	qosDropsByClass map[string]uint64
@@ -113,6 +119,18 @@ func NewWithRegistry(reg prometheus.Registerer) *Metrics {
 			Name: "router_p2p_routes_synced_total",
 			Help: "Total number of P2P routes synced",
 		}),
+		ProxyCacheHitsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "router_proxy_cache_hits_total",
+			Help: "Total proxy cache hits",
+		}),
+		ProxyCacheMissTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "router_proxy_cache_miss_total",
+			Help: "Total proxy cache misses",
+		}),
+		ProxyCompressTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "router_proxy_compress_total",
+			Help: "Total proxy compression operations",
+		}),
 		dropsByReason:   map[string]uint64{},
 		qosDropsByClass: map[string]uint64{},
 	}
@@ -135,6 +153,9 @@ func NewWithRegistry(reg prometheus.Registerer) *Metrics {
 		m.ConfigApplyFailedTotal,
 		m.P2PPeersTotal,
 		m.P2PRoutesSyncedTotal,
+		m.ProxyCacheHitsTotal,
+		m.ProxyCacheMissTotal,
+		m.ProxyCompressTotal,
 	)
 	return m
 }
@@ -229,6 +250,21 @@ func (m *Metrics) IncP2PRouteSynced() {
 	m.P2PRoutesSyncedTotal.Inc()
 }
 
+func (m *Metrics) IncProxyCacheHit() {
+	m.proxyCacheHitsCount.Add(1)
+	m.ProxyCacheHitsTotal.Inc()
+}
+
+func (m *Metrics) IncProxyCacheMiss() {
+	m.proxyCacheMissCount.Add(1)
+	m.ProxyCacheMissTotal.Inc()
+}
+
+func (m *Metrics) IncProxyCompress() {
+	m.proxyCompressCount.Add(1)
+	m.ProxyCompressTotal.Inc()
+}
+
 type Snapshot struct {
 	Packets         uint64
 	Bytes           uint64
@@ -245,6 +281,9 @@ type Snapshot struct {
 	ConfigApplyFailed uint64
 	P2PPeers       uint64
 	P2PRoutesSynced uint64
+	ProxyCacheHits uint64
+	ProxyCacheMiss uint64
+	ProxyCompress  uint64
 }
 
 func (m *Metrics) Snapshot() Snapshot {
@@ -274,6 +313,9 @@ func (m *Metrics) Snapshot() Snapshot {
 		ConfigApplyFailed: m.configApplyFailedCount.Load(),
 		P2PPeers:       m.p2pPeersCount.Load(),
 		P2PRoutesSynced: m.p2pRoutesSyncedCount.Load(),
+		ProxyCacheHits: m.proxyCacheHitsCount.Load(),
+		ProxyCacheMiss: m.proxyCacheMissCount.Load(),
+		ProxyCompress:  m.proxyCompressCount.Load(),
 	}
 }
 

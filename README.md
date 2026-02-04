@@ -48,7 +48,9 @@ go build -o router cmd/router/main.go
 - `GET /api/p2p/peers` — список P2P соседей
 - `GET /api/p2p/routes` — синхронизированные маршруты
 - `POST /api/p2p/reset` — сброс состояния P2P
-- `GET /api/stats` — базовая статистика (rx/tx/пакеты/байты/ошибки/дропы/причины/классы QoS/конфиг/p2p)
+- `GET /api/proxy/stats` — статистика прокси/кэша
+- `POST /api/proxy/cache/clear` — очистка кэша
+- `GET /api/stats` — базовая статистика (rx/tx/пакеты/байты/ошибки/дропы/причины/классы QoS/конфиг/p2p/proxy)
 
 ## Примечания
 

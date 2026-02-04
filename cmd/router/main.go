@@ -21,6 +21,7 @@ import (
 	"router-go/pkg/nat"
 	"router-go/pkg/network"
 	"router-go/pkg/p2p"
+	"router-go/pkg/proxy"
 	"router-go/pkg/qos"
 	"router-go/pkg/routing"
 
@@ -57,6 +58,7 @@ func main() {
 	cfgManager := config.NewManager(cfg, config.DefaultHealthCheck)
 	flowEngine := flow.NewEngine()
 	p2pEngine := buildP2P(cfg, routeTable, metricsSrv, log, ctx)
+	proxyEngine := buildProxy(cfg, metricsSrv, log, ctx)
 
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -71,6 +73,7 @@ func main() {
 		QoS:      qosQueue,
 		Flow:     flowEngine,
 		P2P:      p2pEngine,
+		Proxy:    proxyEngine,
 		ConfigMgr: cfgManager,
 		Metrics:  metricsSrv,
 	}
@@ -373,6 +376,48 @@ func buildP2P(cfg *config.Config, table *routing.Table, metricsSrv *metrics.Metr
 
 	if err := engine.Start(ctx); err != nil {
 		log.Warn("p2p start failed", map[string]any{"err": err.Error()})
+	}
+	return engine
+}
+
+func buildProxy(cfg *config.Config, metricsSrv *metrics.Metrics, log *logger.Logger, ctx context.Context) *proxy.Proxy {
+	if !cfg.Proxy.Enabled {
+		return nil
+	}
+	engine, err := proxy.NewProxy(proxy.Config{
+		ListenAddr:      cfg.Proxy.ListenAddr,
+		H3Addr:          cfg.Proxy.H3Addr,
+		Upstream:        cfg.Proxy.Upstream,
+		CacheSize:       cfg.Proxy.CacheSize,
+		CacheTTLSeconds: cfg.Proxy.CacheTTLSeconds,
+		EnableGzip:      cfg.Proxy.EnableGzip,
+		EnableBrotli:    cfg.Proxy.EnableBrotli,
+		EnableH3:        cfg.Proxy.EnableH3,
+		HSTS:            cfg.Proxy.HSTS,
+		CertFile:        cfg.Proxy.CertFile,
+		KeyFile:         cfg.Proxy.KeyFile,
+	})
+	if err != nil {
+		log.Warn("proxy init failed", map[string]any{"err": err.Error()})
+		return nil
+	}
+	engine.SetCallbacks(metricsSrv.IncProxyCacheHit, metricsSrv.IncProxyCacheMiss, metricsSrv.IncProxyCompress)
+
+	go func() {
+		if err := proxy.StartHTTPServer(ctx, cfg.Proxy.ListenAddr, engine); err != nil {
+			log.Warn("proxy http server error", map[string]any{"err": err.Error()})
+		}
+	}()
+	if cfg.Proxy.EnableH3 {
+		go func() {
+			if cfg.Proxy.CertFile == "" || cfg.Proxy.KeyFile == "" {
+				log.Warn("proxy h3 cert/key missing", nil)
+				return
+			}
+			if err := proxy.StartHTTP3Server(ctx, cfg.Proxy.H3Addr, cfg.Proxy.CertFile, cfg.Proxy.KeyFile, engine); err != nil {
+				log.Warn("proxy h3 server error", map[string]any{"err": err.Error()})
+			}
+		}()
 	}
 	return engine
 }
