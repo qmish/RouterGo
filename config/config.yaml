@@ -41,6 +41,12 @@ ids:
   behavior_action: ALERT
   alert_limit: 1000
 
+selfheal:
+  enabled: true
+  ping_gateway: 192.168.1.254
+  http_check_url: http://192.168.1.1/health
+  timeout_seconds: 3
+
 api:
   address: :8080
 

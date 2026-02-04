@@ -52,6 +52,7 @@ func main() {
 	idsEngine := buildIDS(cfg)
 	natTable := buildNAT(cfg, log)
 	qosQueue := buildQoSQueue(cfg)
+	cfgManager := config.NewManager(cfg, config.DefaultHealthCheck)
 
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -61,6 +62,7 @@ func main() {
 		IDS:      idsEngine,
 		NAT:      natTable,
 		QoS:      qosQueue,
+		ConfigMgr: cfgManager,
 		Metrics:  metricsSrv,
 	}
 	api.RegisterRoutes(router, handlers)
