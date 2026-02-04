@@ -14,6 +14,13 @@ go build -o router cmd/router/main.go
 ./router --config config/config.yaml
 ```
 
+Генерация ключей P2P:
+
+```bash
+go build -o p2pkeygen cmd/p2pkeygen/main.go
+./p2pkeygen --pub p2p_public.key --priv p2p_private.key
+```
+
 ## Конфигурация
 
 Пример конфигурации находится в `config/config.yaml`.
@@ -50,7 +57,57 @@ go build -o router cmd/router/main.go
 - `POST /api/p2p/reset` — сброс состояния P2P
 - `GET /api/proxy/stats` — статистика прокси/кэша
 - `POST /api/proxy/cache/clear` — очистка кэша
+- `GET /api/enrich/ip?ip=1.1.1.1` — обогащение IP (GeoIP/ASN/Threat)
 - `GET /api/stats` — базовая статистика (rx/tx/пакеты/байты/ошибки/дропы/причины/классы QoS/конфиг/p2p/proxy)
+
+## Формат ключей P2P
+
+- Файлы `p2p_public.key` и `p2p_private.key` содержат HEX‑строку без префиксов.
+- `p2p_public.key` — 32 байта (64 hex‑символа).
+- `p2p_private.key` — 64 байта (128 hex‑символов).
+
+## Примеры конфигурации
+
+P2P с подписями:
+
+```yaml
+p2p:
+  enabled: true
+  peer_id: node-1
+  discovery: true
+  listen_addr: :5355
+  multicast_addr: 224.0.0.251:5355
+  sync_interval: 10
+  peer_ttl_seconds: 30
+  private_key_file: p2p_private.key
+  public_key_file: p2p_public.key
+```
+
+Интеграции:
+
+```yaml
+integrations:
+  timeout_seconds: 3
+  geoip:
+    enabled: true
+    mmdb_path: GeoLite2-City.mmdb
+    http_url: ""
+    http_token: ""
+  asn:
+    enabled: true
+    token: "IPINFO_TOKEN"
+  threat_intel:
+    enabled: true
+    api_key: "ABUSEIPDB_KEY"
+  logs:
+    enabled: true
+    loki_url: "http://localhost:3100/loki/api/v1/push"
+    elastic_url: "http://localhost:9200/routergo/_doc"
+  metrics:
+    enabled: true
+    remote_write_url: "http://localhost:9090/api/v1/write"
+    interval_seconds: 10
+```
 
 ## Примечания
 

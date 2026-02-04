@@ -5,6 +5,10 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"flag"
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
+	"net/http"
 	"net"
 	"os"
 	"os/signal"
@@ -90,13 +94,15 @@ func main() {
 		Proxy:     proxyEngine,
 		Enrich:    enrichSvc,
 		EnrichTimeout: time.Duration(cfg.Integrations.TimeoutSeconds) * time.Second,
+		Security:  &cfg.Security,
+		Log:       log,
 		ConfigMgr: cfgManager,
 		Metrics:   metricsSrv,
 	}
 	api.RegisterRoutes(router, handlers)
 
 	go func() {
-		if err := router.Run(cfg.API.Address); err != nil {
+		if err := runAPIServer(ctx, router, cfg, log); err != nil {
 			log.Error("api server error", map[string]any{"err": err.Error()})
 		}
 	}()
@@ -471,6 +477,55 @@ func buildEnrichService(cfg *config.Config, log *logger.Logger) *enrich.Service 
 		threatProvider = enrich.NewThreatAbuseIPDB(cfg.Integrations.ThreatIntel.APIKey, timeout)
 	}
 	return enrich.NewService(geoProvider, asnProvider, threatProvider, 2*time.Minute)
+}
+
+func runAPIServer(ctx context.Context, router *gin.Engine, cfg *config.Config, log *logger.Logger) error {
+	server := &http.Server{
+		Addr:    cfg.API.Address,
+		Handler: router,
+	}
+	go func() {
+		<-ctx.Done()
+		_ = server.Close()
+	}()
+	if cfg.Security.TLS.Enabled {
+		tlsConfig, err := loadTLSConfig(cfg.Security.TLS, log)
+		if err != nil {
+			return err
+		}
+		server.TLSConfig = tlsConfig
+		return server.ListenAndServeTLS(cfg.Security.TLS.CertFile, cfg.Security.TLS.KeyFile)
+	}
+	return server.ListenAndServe()
+}
+
+func loadTLSConfig(cfg config.TLSConfig, log *logger.Logger) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
+	if err != nil {
+		return nil, err
+	}
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}
+	if cfg.ClientCAFile != "" {
+		data, err := os.ReadFile(cfg.ClientCAFile)
+		if err != nil {
+			return nil, err
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(data) {
+			return nil, fmt.Errorf("invalid client CA")
+		}
+		tlsConfig.ClientCAs = pool
+		if cfg.RequireClientCert {
+			tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
+		}
+	}
+	if log != nil && cfg.RequireClientCert {
+		log.Info("mTLS enabled", map[string]any{"client_ca": cfg.ClientCAFile})
+	}
+	return tlsConfig, nil
 }
 
 func buildLocalIPs(cfg *config.Config) []net.IP {

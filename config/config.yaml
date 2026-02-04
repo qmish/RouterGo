@@ -103,6 +103,21 @@ integrations:
     remote_write_url: ""
     interval_seconds: 10
 
+security:
+  enabled: false
+  require_auth: true
+  tokens:
+    - role: admin
+      value: env:ROUTERGO_ADMIN_TOKEN
+    - role: read
+      value: env:ROUTERGO_READ_TOKEN
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+    client_ca_file: ""
+    require_client_cert: false
+
 api:
   address: :8080
 
