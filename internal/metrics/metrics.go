@@ -22,6 +22,10 @@ type Metrics struct {
 }
 
 func New() *Metrics {
+	return NewWithRegistry(prometheus.DefaultRegisterer)
+}
+
+func NewWithRegistry(reg prometheus.Registerer) *Metrics {
 	m := &Metrics{
 		PacketsTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "router_packets_total",
@@ -36,7 +40,10 @@ func New() *Metrics {
 			Help: "Total number of processing errors",
 		}),
 	}
-	prometheus.MustRegister(m.PacketsTotal, m.BytesTotal, m.ErrorsTotal)
+	if reg == nil {
+		reg = prometheus.DefaultRegisterer
+	}
+	reg.MustRegister(m.PacketsTotal, m.BytesTotal, m.ErrorsTotal)
 	return m
 }
 

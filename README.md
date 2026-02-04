@@ -23,6 +23,10 @@ go build -o router cmd/router/main.go
 
 - `GET /api/routes` — список маршрутов
 - `POST /api/firewall` — добавление правила
+- `GET /api/nat` — список правил NAT
+- `POST /api/nat` — добавление правила NAT
+- `GET /api/qos` — список классов QoS
+- `POST /api/qos` — добавление класса QoS
 - `GET /api/stats` — базовая статистика (пакеты/байты/ошибки)
 
 ## Примечания

@@ -43,56 +43,31 @@ func (c *Classifier) Classify(pkt network.Packet) *Class {
 }
 
 type QueueManager struct {
+	mu      sync.Mutex
 	classes []Class
 	queues  map[string][]network.Packet
 	buckets map[string]*TokenBucket
 }
 
 func NewQueueManager(classes []Class) *QueueManager {
-	out := make([]Class, 0, len(classes)+1)
-	out = append(out, classes...)
-	hasDefault := false
-	for _, cl := range classes {
-		if cl.Name == "default" {
-			hasDefault = true
-			break
-		}
-	}
-	if !hasDefault {
-		out = append(out, Class{Name: "default", Priority: 0})
-	}
-
-	// Простая сортировка по приоритету (больше — выше).
-	for i := 0; i < len(out)-1; i++ {
-		for j := i + 1; j < len(out); j++ {
-			if out[j].Priority > out[i].Priority {
-				out[i], out[j] = out[j], out[i]
-			}
-		}
-	}
-
-	queues := make(map[string][]network.Packet, len(out))
-	buckets := make(map[string]*TokenBucket, len(out))
-	for _, cl := range out {
-		if cl.RateLimitKbps > 0 {
-			rateBytes := int64(cl.RateLimitKbps) * 1000 / 8
-			buckets[cl.Name] = NewTokenBucket(rateBytes, rateBytes)
-		}
-	}
-
+	out := normalizeClasses(classes)
 	return &QueueManager{
 		classes: out,
-		queues:  queues,
-		buckets: buckets,
+		queues:  makeQueueMap(out),
+		buckets: makeBucketMap(out),
 	}
 }
 
 func (q *QueueManager) Enqueue(pkt network.Packet) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	class := q.classify(pkt)
 	q.queues[class.Name] = append(q.queues[class.Name], pkt)
 }
 
 func (q *QueueManager) Dequeue() (network.Packet, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	for _, class := range q.classes {
 		queue := q.queues[class.Name]
 		if len(queue) == 0 {
@@ -114,9 +89,28 @@ func (q *QueueManager) Dequeue() (network.Packet, bool) {
 }
 
 func (q *QueueManager) SetNow(now func() time.Time) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	for _, bucket := range q.buckets {
 		bucket.now = now
 	}
+}
+
+func (q *QueueManager) AddClass(class Class) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.classes = appendOrReplaceClass(q.classes, class)
+	q.classes = normalizeClasses(q.classes)
+	q.queues = makeQueueMap(q.classes)
+	q.buckets = makeBucketMap(q.classes)
+}
+
+func (q *QueueManager) Classes() []Class {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	out := make([]Class, 0, len(q.classes))
+	out = append(out, q.classes...)
+	return out
 }
 
 func (q *QueueManager) classify(pkt network.Packet) Class {
@@ -149,6 +143,70 @@ func packetSize(pkt network.Packet) int64 {
 		return int64(pkt.Metadata.Length)
 	}
 	return int64(len(pkt.Data))
+}
+
+func normalizeClasses(classes []Class) []Class {
+	out := make([]Class, 0, len(classes)+1)
+	out = append(out, classes...)
+	hasDefault := false
+	for _, cl := range out {
+		if cl.Name == "default" {
+			hasDefault = true
+			break
+		}
+	}
+	if !hasDefault {
+		out = append(out, Class{Name: "default", Priority: 0})
+	}
+
+	for i := 0; i < len(out)-1; i++ {
+		for j := i + 1; j < len(out); j++ {
+			if out[j].Priority > out[i].Priority {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+	}
+	return out
+}
+
+func appendOrReplaceClass(classes []Class, class Class) []Class {
+	out := make([]Class, 0, len(classes)+1)
+	replaced := false
+	for _, cl := range classes {
+		if cl.Name == class.Name {
+			if !replaced {
+				out = append(out, class)
+				replaced = true
+			}
+			continue
+		}
+		out = append(out, cl)
+	}
+	if !replaced {
+		out = append(out, class)
+	}
+	return out
+}
+
+func makeQueueMap(classes []Class) map[string][]network.Packet {
+	queues := make(map[string][]network.Packet, len(classes))
+	for _, cl := range classes {
+		if _, ok := queues[cl.Name]; !ok {
+			queues[cl.Name] = nil
+		}
+	}
+	return queues
+}
+
+func makeBucketMap(classes []Class) map[string]*TokenBucket {
+	buckets := make(map[string]*TokenBucket, len(classes))
+	for _, cl := range classes {
+		if cl.RateLimitKbps > 0 {
+			rateBytes := int64(cl.RateLimitKbps) * 1000 / 8
+			buckets[cl.Name] = NewTokenBucket(rateBytes, rateBytes)
+		}
+	}
+	return buckets
 }
 
 type TokenBucket struct {
