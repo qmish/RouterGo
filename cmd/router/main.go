@@ -18,8 +18,10 @@ import (
 	"router-go/internal/metrics"
 	"router-go/internal/platform"
 	"router-go/pkg/firewall"
+	"router-go/pkg/enrich"
 	"router-go/pkg/flow"
 	"router-go/pkg/ids"
+	"router-go/pkg/integrations/logs"
 	"router-go/pkg/nat"
 	"router-go/pkg/network"
 	"router-go/pkg/p2p"
@@ -40,6 +42,14 @@ func main() {
 	}
 
 	log := logger.New(cfg.Logging.Level)
+	if cfg.Integrations.Logs.Enabled {
+		if hook := logs.NewLokiHook(cfg.Integrations.Logs.LokiURL); hook != nil {
+			log.AddHook(hook)
+		}
+		if hook := logs.NewElasticHook(cfg.Integrations.Logs.ElasticURL); hook != nil {
+			log.AddHook(hook)
+		}
+	}
 	log.Info("config loaded", map[string]any{"path": *configPath})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -51,6 +61,7 @@ func main() {
 			log.Error("metrics server error", map[string]any{"err": err.Error()})
 		}
 	}()
+	metrics.StartRemoteWrite(ctx, cfg.Integrations.Metrics, metricsSrv)
 
 	routeTable := buildRoutes(cfg, log)
 	firewallEngine := buildFirewall(cfg, log)
@@ -61,6 +72,7 @@ func main() {
 	flowEngine := flow.NewEngine()
 	p2pEngine := buildP2P(cfg, routeTable, metricsSrv, log, ctx)
 	proxyEngine := buildProxy(cfg, metricsSrv, log, ctx)
+	enrichSvc := buildEnrichService(cfg, log)
 
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -76,6 +88,8 @@ func main() {
 		Flow:      flowEngine,
 		P2P:       p2pEngine,
 		Proxy:     proxyEngine,
+		Enrich:    enrichSvc,
+		EnrichTimeout: time.Duration(cfg.Integrations.TimeoutSeconds) * time.Second,
 		ConfigMgr: cfgManager,
 		Metrics:   metricsSrv,
 	}
@@ -431,6 +445,32 @@ func buildProxy(cfg *config.Config, metricsSrv *metrics.Metrics, log *logger.Log
 		}()
 	}
 	return engine
+}
+
+func buildEnrichService(cfg *config.Config, log *logger.Logger) *enrich.Service {
+	timeout := time.Duration(cfg.Integrations.TimeoutSeconds) * time.Second
+	var geoProvider enrich.Provider
+	if cfg.Integrations.GeoIP.Enabled {
+		if cfg.Integrations.GeoIP.MMDBPath != "" {
+			if db, err := enrich.NewGeoIPMMDB(cfg.Integrations.GeoIP.MMDBPath); err == nil {
+				geoProvider = db
+			} else {
+				log.Warn("geoip mmdb load failed", map[string]any{"err": err.Error()})
+			}
+		}
+		if geoProvider == nil && cfg.Integrations.GeoIP.HTTPURL != "" {
+			geoProvider = enrich.NewGeoIPHTTP(cfg.Integrations.GeoIP.HTTPURL, cfg.Integrations.GeoIP.HTTPToken, timeout)
+		}
+	}
+	var asnProvider enrich.Provider
+	if cfg.Integrations.ASN.Enabled {
+		asnProvider = enrich.NewASNIPInfo(cfg.Integrations.ASN.Token, timeout)
+	}
+	var threatProvider enrich.Provider
+	if cfg.Integrations.ThreatIntel.Enabled {
+		threatProvider = enrich.NewThreatAbuseIPDB(cfg.Integrations.ThreatIntel.APIKey, timeout)
+	}
+	return enrich.NewService(geoProvider, asnProvider, threatProvider, 2*time.Minute)
 }
 
 func buildLocalIPs(cfg *config.Config) []net.IP {

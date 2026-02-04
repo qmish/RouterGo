@@ -81,6 +81,10 @@
           <span class="pill">size: -</span>
         </div>
       </div>
+      <div class="card">
+        <h3>Enrich</h3>
+        <div id="enrichInfo" class="meta">Выберите src для обогащения</div>
+      </div>
     </div>
 
     <div id="tab-traffic" class="grid" style="margin-top: 12px;">
@@ -214,6 +218,17 @@
         return res.json();
       }
 
+      async function loadEnrich(ip) {
+        if (!ip) {
+          return null;
+        }
+        const res = await fetch(`/api/enrich/ip?ip=${encodeURIComponent(ip)}`);
+        if (!res.ok) {
+          return null;
+        }
+        return res.json();
+      }
+
       function renderTop(data) {
         topChart.data.labels = data.map(x => x.src_ip);
         topChart.data.datasets[0].data = data.map(x => x.bytes);
@@ -298,6 +313,23 @@
         `;
       }
 
+      function renderEnrich(data) {
+        const container = document.getElementById('enrichInfo');
+        if (!data) {
+          container.innerHTML = 'Нет данных';
+          return;
+        }
+        const geo = data.geo ? `${data.geo.country || ''} ${data.geo.city || ''}`.trim() : '-';
+        const asn = data.asn ? data.asn.asn || '-' : '-';
+        const threat = data.threat ? data.threat.score : '-';
+        container.innerHTML = `
+          <div class="pill">IP: ${data.ip}</div>
+          <div class="pill">Geo: ${geo || '-'}</div>
+          <div class="pill">ASN: ${asn}</div>
+          <div class="pill">Threat: ${threat}</div>
+        `;
+      }
+
       function updateFilterOptions(topData) {
         const select = document.getElementById('srcFilter');
         const current = select.value;
@@ -322,6 +354,9 @@
           renderAlerts(alerts);
           renderStats(stats);
           renderProxyStats(proxyStats);
+          const enrichIP = document.getElementById('srcFilter').value || (top[0] ? top[0].src_ip : '');
+          const enrich = await loadEnrich(enrichIP);
+          renderEnrich(enrich);
         } catch (e) {
           console.error(e);
         }

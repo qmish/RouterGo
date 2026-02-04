@@ -81,6 +81,28 @@ proxy:
   cert_file: ""
   key_file: ""
 
+integrations:
+  timeout_seconds: 3
+  geoip:
+    enabled: false
+    mmdb_path: GeoLite2-City.mmdb
+    http_url: ""
+    http_token: ""
+  asn:
+    enabled: false
+    token: ""
+  threat_intel:
+    enabled: false
+    api_key: ""
+  logs:
+    enabled: false
+    loki_url: ""
+    elastic_url: ""
+  metrics:
+    enabled: false
+    remote_write_url: ""
+    interval_seconds: 10
+
 api:
   address: :8080
 
