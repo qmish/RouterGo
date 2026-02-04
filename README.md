@@ -17,6 +17,7 @@ go build -o router cmd/router/main.go
 ## Конфигурация
 
 Пример конфигурации находится в `config/config.yaml`.
+По умолчанию политики firewall задаются в `firewall_defaults` (input/output/forward).
 
 ## REST API
 

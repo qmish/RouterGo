@@ -10,6 +10,7 @@ type Config struct {
 	Interfaces []InterfaceConfig    `mapstructure:"interfaces"`
 	Routes     []RouteConfig        `mapstructure:"routes"`
 	Firewall   []FirewallRuleConfig `mapstructure:"firewall"`
+	FirewallDefaults FirewallDefaultsConfig `mapstructure:"firewall_defaults"`
 	NAT        []NATRuleConfig      `mapstructure:"nat"`
 	QoS        []QoSClassConfig     `mapstructure:"qos"`
 	API        APIConfig            `mapstructure:"api"`
@@ -39,6 +40,12 @@ type FirewallRuleConfig struct {
 	DstPort      int    `mapstructure:"dst_port"`
 	InInterface  string `mapstructure:"in_interface"`
 	OutInterface string `mapstructure:"out_interface"`
+}
+
+type FirewallDefaultsConfig struct {
+	Input   string `mapstructure:"input"`
+	Output  string `mapstructure:"output"`
+	Forward string `mapstructure:"forward"`
 }
 
 type NATRuleConfig struct {

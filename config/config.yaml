@@ -14,6 +14,11 @@ firewall:
     protocol: TCP
     dst_port: 22
 
+firewall_defaults:
+  input: DROP
+  output: ACCEPT
+  forward: DROP
+
 nat:
   - type: SNAT
     src_ip: 192.168.1.0/24
