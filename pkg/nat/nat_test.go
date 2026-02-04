@@ -166,3 +166,83 @@ func TestConnectionTrackingReuse(t *testing.T) {
 		t.Fatalf("expected tracked snat, got %s", out2.Metadata.SrcIP)
 	}
 }
+
+func TestConnectionTrackingReverseSNAT(t *testing.T) {
+	_, srcNet, _ := net.ParseCIDR("10.0.0.0/8")
+	table := NewTable([]Rule{
+		{
+			Type:   TypeSNAT,
+			SrcNet: srcNet,
+			ToIP:   net.ParseIP("203.0.113.10"),
+			ToPort: 40000,
+		},
+	})
+
+	outbound := network.Packet{
+		Metadata: network.PacketMetadata{
+			Protocol: "TCP",
+			SrcIP:    net.ParseIP("10.1.2.3"),
+			DstIP:    net.ParseIP("8.8.8.8"),
+			SrcPort:  1234,
+			DstPort:  80,
+		},
+	}
+	table.Apply(outbound)
+
+	inbound := network.Packet{
+		Metadata: network.PacketMetadata{
+			Protocol: "TCP",
+			SrcIP:    net.ParseIP("8.8.8.8"),
+			DstIP:    net.ParseIP("203.0.113.10"),
+			SrcPort:  80,
+			DstPort:  40000,
+		},
+	}
+	out := table.Apply(inbound)
+	if out.Metadata.DstIP.String() != "10.1.2.3" {
+		t.Fatalf("expected reverse snat dst, got %s", out.Metadata.DstIP)
+	}
+	if out.Metadata.DstPort != 1234 {
+		t.Fatalf("expected reverse snat dst port, got %d", out.Metadata.DstPort)
+	}
+}
+
+func TestConnectionTrackingReverseDNAT(t *testing.T) {
+	_, dstNet, _ := net.ParseCIDR("203.0.113.0/24")
+	table := NewTable([]Rule{
+		{
+			Type:   TypeDNAT,
+			DstNet: dstNet,
+			ToIP:   net.ParseIP("192.168.1.10"),
+			ToPort: 8080,
+		},
+	})
+
+	inbound := network.Packet{
+		Metadata: network.PacketMetadata{
+			Protocol: "TCP",
+			SrcIP:    net.ParseIP("1.1.1.1"),
+			DstIP:    net.ParseIP("203.0.113.25"),
+			SrcPort:  50000,
+			DstPort:  80,
+		},
+	}
+	table.Apply(inbound)
+
+	outbound := network.Packet{
+		Metadata: network.PacketMetadata{
+			Protocol: "TCP",
+			SrcIP:    net.ParseIP("192.168.1.10"),
+			DstIP:    net.ParseIP("1.1.1.1"),
+			SrcPort:  8080,
+			DstPort:  50000,
+		},
+	}
+	out := table.Apply(outbound)
+	if out.Metadata.SrcIP.String() != "203.0.113.25" {
+		t.Fatalf("expected reverse dnat src, got %s", out.Metadata.SrcIP)
+	}
+	if out.Metadata.SrcPort != 80 {
+		t.Fatalf("expected reverse dnat src port, got %d", out.Metadata.SrcPort)
+	}
+}
