@@ -146,9 +146,9 @@ func processPacket(
 	if qosQueue == nil {
 		return
 	}
-	ok, dropped := qosQueue.Enqueue(pkt)
+	ok, dropped, className := qosQueue.Enqueue(pkt)
 	if dropped {
-		metricsSrv.IncDropReason("qos")
+		metricsSrv.IncQoSDrop(className)
 	}
 	if !ok {
 		return

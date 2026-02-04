@@ -60,7 +60,7 @@ func NewQueueManager(classes []Class) *QueueManager {
 	}
 }
 
-func (q *QueueManager) Enqueue(pkt network.Packet) (bool, bool) {
+func (q *QueueManager) Enqueue(pkt network.Packet) (bool, bool, string) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	class := q.classify(pkt)
@@ -70,13 +70,13 @@ func (q *QueueManager) Enqueue(pkt network.Packet) (bool, bool) {
 		case "head":
 			queue = queue[1:]
 			q.queues[class.Name] = append(queue, pkt)
-			return true, true
+			return true, true, class.Name
 		default:
-			return false, true
+			return false, true, class.Name
 		}
 	}
 	q.queues[class.Name] = append(queue, pkt)
-	return true, false
+	return true, false, class.Name
 }
 
 func (q *QueueManager) Dequeue() (network.Packet, bool) {

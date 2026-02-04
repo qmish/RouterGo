@@ -19,12 +19,14 @@ type Metrics struct {
 	ErrorsTotal   prometheus.Counter
 	DropsTotal    prometheus.Counter
 	DropsByReason *prometheus.CounterVec
+	QoSDropsByClass *prometheus.CounterVec
 	packetsCount  atomic.Uint64
 	bytesCount    atomic.Uint64
 	errorsCount   atomic.Uint64
 	dropsCount    atomic.Uint64
 	mu            sync.Mutex
 	dropsByReason map[string]uint64
+	qosDropsByClass map[string]uint64
 }
 
 func New() *Metrics {
@@ -53,12 +55,17 @@ func NewWithRegistry(reg prometheus.Registerer) *Metrics {
 			Name: "router_drops_by_reason_total",
 			Help: "Dropped packets by reason",
 		}, []string{"reason"}),
+		QoSDropsByClass: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "router_qos_drops_by_class_total",
+			Help: "QoS dropped packets by class",
+		}, []string{"class"}),
 		dropsByReason: map[string]uint64{},
+		qosDropsByClass: map[string]uint64{},
 	}
 	if reg == nil {
 		reg = prometheus.DefaultRegisterer
 	}
-	reg.MustRegister(m.PacketsTotal, m.BytesTotal, m.ErrorsTotal, m.DropsTotal, m.DropsByReason)
+	reg.MustRegister(m.PacketsTotal, m.BytesTotal, m.ErrorsTotal, m.DropsTotal, m.DropsByReason, m.QoSDropsByClass)
 	return m
 }
 
@@ -96,12 +103,24 @@ func (m *Metrics) IncDropReason(reason string) {
 	m.mu.Unlock()
 }
 
+func (m *Metrics) IncQoSDrop(class string) {
+	if class == "" {
+		return
+	}
+	m.IncDropReason("qos")
+	m.QoSDropsByClass.WithLabelValues(class).Inc()
+	m.mu.Lock()
+	m.qosDropsByClass[class]++
+	m.mu.Unlock()
+}
+
 type Snapshot struct {
 	Packets       uint64
 	Bytes         uint64
 	Errors        uint64
 	Drops         uint64
 	DropsByReason map[string]uint64
+	QoSDropsByClass map[string]uint64
 }
 
 func (m *Metrics) Snapshot() Snapshot {
@@ -110,6 +129,10 @@ func (m *Metrics) Snapshot() Snapshot {
 	for k, v := range m.dropsByReason {
 		reasons[k] = v
 	}
+	qosDrops := make(map[string]uint64, len(m.qosDropsByClass))
+	for k, v := range m.qosDropsByClass {
+		qosDrops[k] = v
+	}
 	m.mu.Unlock()
 	return Snapshot{
 		Packets:       m.packetsCount.Load(),
@@ -117,6 +140,7 @@ func (m *Metrics) Snapshot() Snapshot {
 		Errors:        m.errorsCount.Load(),
 		Drops:         m.dropsCount.Load(),
 		DropsByReason: reasons,
+		QoSDropsByClass: qosDrops,
 	}
 }
 
