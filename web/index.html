@@ -8,18 +8,30 @@
       body { font-family: Arial, sans-serif; margin: 20px; background: #f6f7fb; color: #1d1f23; }
       h1 { margin-bottom: 6px; }
       .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+      .gridWide { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
       .card { background: #fff; border-radius: 10px; padding: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
       .meta { font-size: 12px; color: #6b7280; }
       .alerts { max-height: 220px; overflow: auto; }
       table { width: 100%; border-collapse: collapse; font-size: 12px; }
       th, td { padding: 6px; border-bottom: 1px solid #eee; text-align: left; }
       .badge { display: inline-block; padding: 2px 6px; border-radius: 6px; font-size: 11px; background: #eef2ff; color: #3730a3; }
+      .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background:#f3f4f6; font-size: 12px; margin-right: 6px; }
+      .nav { display:flex; gap:8px; flex-wrap: wrap; margin: 8px 0; }
+      .nav button { padding: 6px 10px; border-radius: 8px; border:1px solid #e5e7eb; background:#fff; cursor:pointer; }
+      .nav button.active { background:#eef2ff; border-color:#c7d2fe; }
+      .hidden { display: none; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
   <body>
     <h1>RouterGo Dashboard</h1>
     <div class="meta">Автообновление</div>
+    <div class="nav">
+      <button data-tab="overview">Обзор</button>
+      <button data-tab="traffic">Трафик</button>
+      <button data-tab="sessions">Сессии</button>
+      <button data-tab="alerts">Алерты</button>
+    </div>
     <div style="margin: 10px 0; display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
       <button id="refreshBtn">Обновить сейчас</button>
       <label>
@@ -40,7 +52,38 @@
         </select>
       </label>
     </div>
-    <div class="grid" style="margin-top: 12px;">
+    <div id="tab-overview" class="grid gridWide" style="margin-top: 12px;">
+      <div class="card">
+        <h3>Система</h3>
+        <div id="sysStats">
+          <span class="pill">packets: -</span>
+          <span class="pill">rx: -</span>
+          <span class="pill">tx: -</span>
+          <span class="pill">drops: -</span>
+          <span class="pill">errors: -</span>
+        </div>
+        <div class="meta" style="margin-top:8px;">/api/stats</div>
+      </div>
+      <div class="card">
+        <h3>Подсистемы</h3>
+        <div id="subsystemStats">
+          <div class="pill">IDS alerts: -</div>
+          <div class="pill">P2P peers: -</div>
+          <div class="pill">Proxy hits: -</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Proxy</h3>
+        <div id="proxyStats">
+          <span class="pill">hits: -</span>
+          <span class="pill">miss: -</span>
+          <span class="pill">compress: -</span>
+          <span class="pill">size: -</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-traffic" class="grid" style="margin-top: 12px;">
       <div class="card">
         <h3>Top bandwidth (src IP)</h3>
         <canvas id="topChart" height="140"></canvas>
@@ -49,6 +92,9 @@
         <h3>История трафика (top src)</h3>
         <canvas id="historyChart" height="140"></canvas>
       </div>
+    </div>
+
+    <div id="tab-sessions" class="grid" style="margin-top: 12px;">
       <div class="card">
         <h3>Sessions tree</h3>
         <div class="meta">Суммарные байты по направлению</div>
@@ -59,8 +105,23 @@
           <tbody></tbody>
         </table>
       </div>
+    </div>
+
+    <div id="tab-alerts" class="grid" style="margin-top: 12px;">
       <div class="card">
         <h3>Alerts</h3>
+        <div class="meta">Фильтры</div>
+        <div style="margin: 6px 0;">
+          <label>Тип:
+            <select id="alertType">
+              <option value="">Все</option>
+              <option value="SIGNATURE">SIGNATURE</option>
+              <option value="RATE_SPIKE">RATE_SPIKE</option>
+              <option value="PORT_SCAN">PORT_SCAN</option>
+              <option value="DST_SWEEP">DST_SWEEP</option>
+            </select>
+          </label>
+        </div>
         <div class="alerts" id="alerts"></div>
       </div>
     </div>
@@ -81,6 +142,7 @@
 
       let history = [];
       let refreshTimer = null;
+      const storageKey = 'routergo_ui';
 
       function demoTop() {
         const labels = Array.from({length: 8}, (_, i) => `10.0.0.${i+1}`);
@@ -129,9 +191,27 @@
         if (document.getElementById('demoMode').checked) {
           return demoAlerts();
         }
-        const res = await fetch('/api/dashboard/alerts');
+        const type = document.getElementById('alertType').value;
+        const url = type ? `/api/dashboard/alerts?type=${encodeURIComponent(type)}` : '/api/dashboard/alerts';
+        const res = await fetch(url);
         const data = await res.json();
         return Array.isArray(data) && data.length ? data : demoAlerts();
+      }
+
+      async function loadStats() {
+        const res = await fetch('/api/stats');
+        if (!res.ok) {
+          return null;
+        }
+        return res.json();
+      }
+
+      async function loadProxyStats() {
+        const res = await fetch('/api/proxy/stats');
+        if (!res.ok) {
+          return null;
+        }
+        return res.json();
       }
 
       function renderTop(data) {
@@ -188,6 +268,36 @@
         ).join('');
       }
 
+      function renderStats(stats) {
+        if (!stats || stats.status !== 'ok') {
+          return;
+        }
+        document.getElementById('sysStats').innerHTML = `
+          <span class="pill">packets: ${stats.packets_total}</span>
+          <span class="pill">rx: ${stats.rx_packets_total}</span>
+          <span class="pill">tx: ${stats.tx_packets_total}</span>
+          <span class="pill">drops: ${stats.drops_total}</span>
+          <span class="pill">errors: ${stats.errors_total}</span>
+        `;
+        document.getElementById('subsystemStats').innerHTML = `
+          <div class="pill">IDS alerts: ${stats.ids_alerts_total}</div>
+          <div class="pill">P2P peers: ${stats.p2p_peers_total}</div>
+          <div class="pill">Proxy hits: ${stats.proxy_cache_hits_total}</div>
+        `;
+      }
+
+      function renderProxyStats(stats) {
+        if (!stats) {
+          return;
+        }
+        document.getElementById('proxyStats').innerHTML = `
+          <span class="pill">hits: ${stats.cache_hits}</span>
+          <span class="pill">miss: ${stats.cache_miss}</span>
+          <span class="pill">compress: ${stats.compress_total}</span>
+          <span class="pill">size: ${stats.cache_size}</span>
+        `;
+      }
+
       function updateFilterOptions(topData) {
         const select = document.getElementById('srcFilter');
         const current = select.value;
@@ -198,17 +308,76 @@
 
       async function refreshAll() {
         try {
-          const [top, sessions, alerts] = await Promise.all([loadTop(), loadSessions(), loadAlerts()]);
+          const [top, sessions, alerts, stats, proxyStats] = await Promise.all([
+            loadTop(),
+            loadSessions(),
+            loadAlerts(),
+            loadStats(),
+            loadProxyStats()
+          ]);
           renderTop(top);
           updateFilterOptions(top);
           renderHistory(top);
           renderSessions(sessions);
           renderAlerts(alerts);
+          renderStats(stats);
+          renderProxyStats(proxyStats);
         } catch (e) {
           console.error(e);
         }
       }
 
+      function saveSettings() {
+        const data = {
+          demoMode: document.getElementById('demoMode').checked,
+          refreshInterval: document.getElementById('refreshInterval').value,
+          srcFilter: document.getElementById('srcFilter').value,
+          alertType: document.getElementById('alertType').value,
+          tab: document.querySelector('.nav button.active')?.dataset.tab || 'overview'
+        };
+        localStorage.setItem(storageKey, JSON.stringify(data));
+      }
+
+      function loadSettings() {
+        const data = JSON.parse(localStorage.getItem(storageKey) || '{}');
+        if (typeof data.demoMode === 'boolean') {
+          document.getElementById('demoMode').checked = data.demoMode;
+        }
+        if (data.refreshInterval) {
+          document.getElementById('refreshInterval').value = data.refreshInterval;
+        }
+        if (data.srcFilter) {
+          document.getElementById('srcFilter').value = data.srcFilter;
+        }
+        if (data.alertType) {
+          document.getElementById('alertType').value = data.alertType;
+        }
+        if (data.tab) {
+          setTab(data.tab);
+        } else {
+          setTab('overview');
+        }
+      }
+
+      function setTab(tab) {
+        document.querySelectorAll('[id^="tab-"]').forEach(el => el.classList.add('hidden'));
+        const active = document.getElementById(`tab-${tab}`);
+        if (active) {
+          active.classList.remove('hidden');
+        }
+        document.querySelectorAll('.nav button').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.tab === tab);
+        });
+      }
+
+      document.querySelectorAll('.nav button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          setTab(btn.dataset.tab);
+          saveSettings();
+        });
+      });
+
+      loadSettings();
       refreshAll();
       function startTimer() {
         if (refreshTimer) {
@@ -216,11 +385,14 @@
         }
         const interval = parseInt(document.getElementById('refreshInterval').value, 10);
         refreshTimer = setInterval(refreshAll, interval);
+        saveSettings();
       }
       startTimer();
       document.getElementById('refreshBtn').addEventListener('click', refreshAll);
       document.getElementById('refreshInterval').addEventListener('change', startTimer);
-      document.getElementById('srcFilter').addEventListener('change', refreshAll);
+      document.getElementById('srcFilter').addEventListener('change', () => { saveSettings(); refreshAll(); });
+      document.getElementById('demoMode').addEventListener('change', () => { saveSettings(); refreshAll(); });
+      document.getElementById('alertType').addEventListener('change', () => { saveSettings(); refreshAll(); });
     </script>
   </body>
 </html>
