@@ -41,6 +41,10 @@ go build -o router cmd/router/main.go
 - `POST /api/config/apply` — применить конфигурацию (self-heal)
 - `POST /api/config/rollback` — откат к последнему снапшоту
 - `GET /api/config/snapshots` — список снапшотов
+- `GET /api/dashboard/top/bandwidth` — топ потребителей трафика
+- `GET /api/dashboard/sessions/tree` — дерево сессий
+- `GET /api/dashboard/alerts` — алерты в реальном времени
+- `/dashboard` — статические страницы Web Dashboard
 - `GET /api/stats` — базовая статистика (rx/tx/пакеты/байты/ошибки/дропы/причины/классы QoS/конфиг)
 
 ## Примечания

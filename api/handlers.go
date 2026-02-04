@@ -3,11 +3,13 @@ package api
 import (
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"router-go/internal/config"
 	"router-go/internal/metrics"
 	"router-go/pkg/firewall"
+	"router-go/pkg/flow"
 	"router-go/pkg/ids"
 	"router-go/pkg/nat"
 	"router-go/pkg/qos"
@@ -22,6 +24,7 @@ type Handlers struct {
 	IDS      *ids.Engine
 	NAT      *nat.Table
 	QoS      *qos.QueueManager
+	Flow     *flow.Engine
 	ConfigMgr *config.Manager
 	Metrics  *metrics.Metrics
 }
@@ -367,6 +370,36 @@ func (h *Handlers) GetConfigSnapshots(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, h.ConfigMgr.Snapshots())
+}
+
+func (h *Handlers) GetDashboardTopBandwidth(c *gin.Context) {
+	if h.Flow == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "flow tracking disabled"})
+		return
+	}
+	limit := 5
+	if v := c.Query("limit"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	c.JSON(http.StatusOK, h.Flow.TopBandwidth(limit))
+}
+
+func (h *Handlers) GetDashboardSessionsTree(c *gin.Context) {
+	if h.Flow == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "flow tracking disabled"})
+		return
+	}
+	c.JSON(http.StatusOK, h.Flow.SessionsTree())
+}
+
+func (h *Handlers) GetDashboardAlerts(c *gin.Context) {
+	if h.IDS == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ids disabled"})
+		return
+	}
+	c.JSON(http.StatusOK, h.IDS.Alerts())
 }
 
 func (h *Handlers) GetNAT(c *gin.Context) {

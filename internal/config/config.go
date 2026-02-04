@@ -16,6 +16,7 @@ type Config struct {
 	QoS        []QoSClassConfig     `mapstructure:"qos"`
 	IDS        IDSConfig            `mapstructure:"ids"`
 	SelfHeal   SelfHealConfig       `mapstructure:"selfheal"`
+	Dashboard  DashboardConfig      `mapstructure:"dashboard"`
 	API        APIConfig            `mapstructure:"api"`
 	Metrics    MetricsConfig        `mapstructure:"metrics"`
 	Logging    LoggingConfig        `mapstructure:"logging"`
@@ -86,6 +87,11 @@ type SelfHealConfig struct {
 	PingGateway    string `mapstructure:"ping_gateway"`
 	HTTPCheckURL   string `mapstructure:"http_check_url"`
 	TimeoutSeconds int    `mapstructure:"timeout_seconds"`
+}
+
+type DashboardConfig struct {
+	Enabled   bool   `mapstructure:"enabled"`
+	StaticDir string `mapstructure:"static_dir"`
 }
 
 type APIConfig struct {
@@ -172,6 +178,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.SelfHeal.TimeoutSeconds == 0 {
 		cfg.SelfHeal.TimeoutSeconds = 3
+	}
+	if cfg.Dashboard.StaticDir == "" {
+		cfg.Dashboard.StaticDir = "web"
 	}
 }
 
