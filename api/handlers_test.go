@@ -68,11 +68,11 @@ func TestAddAndGetQoS(t *testing.T) {
 	router := setupRouter(h)
 
 	payload := map[string]any{
-		"name":           "voice",
-		"protocol":       "UDP",
-		"dst_port":       5060,
+		"name":            "voice",
+		"protocol":        "UDP",
+		"dst_port":        5060,
 		"rate_limit_kbps": 512,
-		"priority":       10,
+		"priority":        10,
 	}
 	body, _ := json.Marshal(payload)
 	req := httptest.NewRequest(http.MethodPost, "/api/qos", bytes.NewReader(body))

@@ -3,6 +3,7 @@ package api
 import (
 	"net"
 	"net/http"
+	"strings"
 
 	"router-go/internal/metrics"
 	"router-go/pkg/firewall"
@@ -102,6 +103,77 @@ func (h *Handlers) GetStats(c *gin.Context) {
 		"bytes_total":   snapshot.Bytes,
 		"errors_total":  snapshot.Errors,
 	})
+}
+
+func (h *Handlers) GetFirewallRules(c *gin.Context) {
+	type ruleView struct {
+		Chain        string `json:"chain"`
+		Action       string `json:"action"`
+		Protocol     string `json:"protocol,omitempty"`
+		SrcIP        string `json:"src_ip,omitempty"`
+		DstIP        string `json:"dst_ip,omitempty"`
+		SrcPort      int    `json:"src_port,omitempty"`
+		DstPort      int    `json:"dst_port,omitempty"`
+		InInterface  string `json:"in_interface,omitempty"`
+		OutInterface string `json:"out_interface,omitempty"`
+	}
+	rules := h.Firewall.Rules()
+	out := make([]ruleView, 0, len(rules))
+	for _, r := range rules {
+		view := ruleView{
+			Chain:        r.Chain,
+			Action:       string(r.Action),
+			Protocol:     r.Protocol,
+			SrcPort:      r.SrcPort,
+			DstPort:      r.DstPort,
+			InInterface:  r.InInterface,
+			OutInterface: r.OutInterface,
+		}
+		if r.SrcNet != nil {
+			view.SrcIP = r.SrcNet.String()
+		}
+		if r.DstNet != nil {
+			view.DstIP = r.DstNet.String()
+		}
+		out = append(out, view)
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *Handlers) GetFirewallDefaults(c *gin.Context) {
+	defaults := h.Firewall.DefaultPolicies()
+	out := map[string]string{}
+	for k, v := range defaults {
+		out[k] = string(v)
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *Handlers) SetFirewallDefault(c *gin.Context) {
+	var req struct {
+		Chain  string `json:"chain"`
+		Action string `json:"action"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	chain := strings.ToUpper(strings.TrimSpace(req.Chain))
+	action := strings.ToUpper(strings.TrimSpace(req.Action))
+
+	if chain == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "chain is required"})
+		return
+	}
+	switch action {
+	case string(firewall.ActionAccept), string(firewall.ActionDrop), string(firewall.ActionReject):
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid action"})
+		return
+	}
+
+	h.Firewall.SetDefaultPolicy(chain, firewall.Action(action))
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 func (h *Handlers) GetNAT(c *gin.Context) {
