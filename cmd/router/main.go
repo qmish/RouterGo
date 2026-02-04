@@ -112,7 +112,7 @@ func startPacketLoop(
 				continue
 			}
 
-			meta, err := network.ParseIPv4Metadata(pkt.Data)
+			meta, err := network.ParseIPMetadata(pkt.Data)
 			if err != nil {
 				metricsSrv.IncErrors()
 				continue
