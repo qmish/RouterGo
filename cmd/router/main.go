@@ -121,7 +121,7 @@ func startPacketLoop(
 
 			metricsSrv.IncPackets()
 			metricsSrv.AddBytes(len(pkt.Data))
-			processPacket(pkt, localIPs, routes, firewallEngine, natTable, qosQueue)
+			processPacket(pkt, localIPs, routes, firewallEngine, natTable, qosQueue, metricsSrv)
 		}
 	}()
 }
@@ -133,6 +133,7 @@ func processPacket(
 	firewallEngine *firewall.Engine,
 	natTable *nat.Table,
 	qosQueue *qos.QueueManager,
+	metricsSrv *metrics.Metrics,
 ) {
 	_, _ = routes.Lookup(pkt.Metadata.DstIP)
 	pkt = natTable.Apply(pkt)
@@ -143,7 +144,10 @@ func processPacket(
 	if qosQueue == nil {
 		return
 	}
-	qosQueue.Enqueue(pkt)
+	if ok := qosQueue.Enqueue(pkt); !ok {
+		metricsSrv.IncDrops()
+		return
+	}
 }
 
 func runEgressLoop(ctx context.Context, io network.PacketIO, qosQueue *qos.QueueManager, log *logger.Logger) {

@@ -7,6 +7,7 @@ func TestMetricsSnapshot(t *testing.T) {
 	m.IncPackets()
 	m.AddBytes(150)
 	m.IncErrors()
+	m.IncDrops()
 
 	s := m.Snapshot()
 	if s.Packets != 1 {
@@ -17,5 +18,8 @@ func TestMetricsSnapshot(t *testing.T) {
 	}
 	if s.Errors != 1 {
 		t.Fatalf("expected errors 1, got %d", s.Errors)
+	}
+	if s.Drops != 1 {
+		t.Fatalf("expected drops 1, got %d", s.Drops)
 	}
 }

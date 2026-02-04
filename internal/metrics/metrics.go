@@ -16,9 +16,11 @@ type Metrics struct {
 	PacketsTotal prometheus.Counter
 	BytesTotal   prometheus.Counter
 	ErrorsTotal  prometheus.Counter
+	DropsTotal   prometheus.Counter
 	packetsCount atomic.Uint64
 	bytesCount   atomic.Uint64
 	errorsCount  atomic.Uint64
+	dropsCount   atomic.Uint64
 }
 
 func New() *Metrics {
@@ -39,11 +41,15 @@ func NewWithRegistry(reg prometheus.Registerer) *Metrics {
 			Name: "router_errors_total",
 			Help: "Total number of processing errors",
 		}),
+		DropsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "router_drops_total",
+			Help: "Total number of dropped packets",
+		}),
 	}
 	if reg == nil {
 		reg = prometheus.DefaultRegisterer
 	}
-	reg.MustRegister(m.PacketsTotal, m.BytesTotal, m.ErrorsTotal)
+	reg.MustRegister(m.PacketsTotal, m.BytesTotal, m.ErrorsTotal, m.DropsTotal)
 	return m
 }
 
@@ -65,10 +71,16 @@ func (m *Metrics) IncErrors() {
 	m.ErrorsTotal.Inc()
 }
 
+func (m *Metrics) IncDrops() {
+	m.dropsCount.Add(1)
+	m.DropsTotal.Inc()
+}
+
 type Snapshot struct {
 	Packets uint64
 	Bytes   uint64
 	Errors  uint64
+	Drops   uint64
 }
 
 func (m *Metrics) Snapshot() Snapshot {
@@ -76,6 +88,7 @@ func (m *Metrics) Snapshot() Snapshot {
 		Packets: m.packetsCount.Load(),
 		Bytes:   m.bytesCount.Load(),
 		Errors:  m.errorsCount.Load(),
+		Drops:   m.dropsCount.Load(),
 	}
 }
 

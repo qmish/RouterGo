@@ -30,7 +30,7 @@ go build -o router cmd/router/main.go
 - `POST /api/nat` — добавление правила NAT
 - `GET /api/qos` — список классов QoS
 - `POST /api/qos` — добавление класса QoS
-- `GET /api/stats` — базовая статистика (пакеты/байты/ошибки)
+- `GET /api/stats` — базовая статистика (пакеты/байты/ошибки/дропы)
 
 ## Примечания
 
