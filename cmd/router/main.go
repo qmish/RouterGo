@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"router-go/api"
 	"router-go/internal/config"
@@ -92,6 +93,8 @@ func startPacketLoop(
 		return
 	}
 
+	go runEgressLoop(ctx, io, qosQueue, log)
+
 	go func() {
 		defer io.Close()
 		for {
@@ -139,7 +142,32 @@ func processPacket(
 		return
 	}
 	qosQueue.Enqueue(pkt)
-	_, _ = qosQueue.Dequeue()
+}
+
+func runEgressLoop(ctx context.Context, io network.PacketIO, qosQueue *qos.QueueManager, log *logger.Logger) {
+	if qosQueue == nil {
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		if ok := dequeueAndWrite(qosQueue, io); !ok {
+			time.Sleep(2 * time.Millisecond)
+		}
+	}
+}
+
+func dequeueAndWrite(qosQueue *qos.QueueManager, io network.PacketIO) bool {
+	pkt, ok := qosQueue.Dequeue()
+	if !ok {
+		return false
+	}
+	_ = io.WritePacket(context.Background(), pkt)
+	return true
 }
 
 func buildRoutes(cfg *config.Config, log *logger.Logger) *routing.Table {
