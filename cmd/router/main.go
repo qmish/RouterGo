@@ -66,16 +66,16 @@ func main() {
 		router.Static("/dashboard", cfg.Dashboard.StaticDir)
 	}
 	handlers := &api.Handlers{
-		Routes:   routeTable,
-		Firewall: firewallEngine,
-		IDS:      idsEngine,
-		NAT:      natTable,
-		QoS:      qosQueue,
-		Flow:     flowEngine,
-		P2P:      p2pEngine,
-		Proxy:    proxyEngine,
+		Routes:    routeTable,
+		Firewall:  firewallEngine,
+		IDS:       idsEngine,
+		NAT:       natTable,
+		QoS:       qosQueue,
+		Flow:      flowEngine,
+		P2P:       p2pEngine,
+		Proxy:     proxyEngine,
 		ConfigMgr: cfgManager,
-		Metrics:  metricsSrv,
+		Metrics:   metricsSrv,
 	}
 	api.RegisterRoutes(router, handlers)
 
@@ -354,11 +354,12 @@ func buildIDS(cfg *config.Config) *ids.Engine {
 	}
 	action := ids.Action(strings.ToUpper(strings.TrimSpace(cfg.IDS.BehaviorAction)))
 	return ids.NewEngine(ids.Config{
-		Window:            time.Duration(cfg.IDS.WindowSeconds) * time.Second,
-		RateThreshold:     cfg.IDS.RateThreshold,
-		PortScanThreshold: cfg.IDS.PortScanThreshold,
-		BehaviorAction:    action,
-		AlertLimit:        cfg.IDS.AlertLimit,
+		Window:             time.Duration(cfg.IDS.WindowSeconds) * time.Second,
+		RateThreshold:      cfg.IDS.RateThreshold,
+		PortScanThreshold:  cfg.IDS.PortScanThreshold,
+		UniqueDstThreshold: cfg.IDS.UniqueDstThreshold,
+		BehaviorAction:     action,
+		AlertLimit:         cfg.IDS.AlertLimit,
 	})
 }
 
@@ -370,6 +371,7 @@ func buildP2P(cfg *config.Config, table *routing.Table, metricsSrv *metrics.Metr
 		PeerID:        cfg.P2P.PeerID,
 		Discovery:     cfg.P2P.Discovery,
 		SyncInterval:  time.Duration(cfg.P2P.SyncInterval) * time.Second,
+		PeerTTL:       time.Duration(cfg.P2P.PeerTTLSeconds) * time.Second,
 		ListenAddr:    cfg.P2P.ListenAddr,
 		MulticastAddr: cfg.P2P.MulticastAddr,
 	}, table, nil, metricsSrv.IncP2PPeer, metricsSrv.IncP2PRouteSynced)

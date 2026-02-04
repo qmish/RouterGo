@@ -21,16 +21,16 @@ import (
 )
 
 type Handlers struct {
-	Routes   *routing.Table
-	Firewall *firewall.Engine
-	IDS      *ids.Engine
-	NAT      *nat.Table
-	QoS      *qos.QueueManager
-	Flow     *flow.Engine
-	P2P      *p2p.Engine
-	Proxy    *proxy.Proxy
+	Routes    *routing.Table
+	Firewall  *firewall.Engine
+	IDS       *ids.Engine
+	NAT       *nat.Table
+	QoS       *qos.QueueManager
+	Flow      *flow.Engine
+	P2P       *p2p.Engine
+	Proxy     *proxy.Proxy
 	ConfigMgr *config.Manager
-	Metrics  *metrics.Metrics
+	Metrics   *metrics.Metrics
 }
 
 func (h *Handlers) GetRoutes(c *gin.Context) {
@@ -108,26 +108,26 @@ func (h *Handlers) AddFirewallRule(c *gin.Context) {
 func (h *Handlers) GetStats(c *gin.Context) {
 	snapshot := h.Metrics.Snapshot()
 	c.JSON(http.StatusOK, gin.H{
-		"status":             "ok",
-		"routes_count":       len(h.Routes.Routes()),
-		"packets_total":      snapshot.Packets,
-		"rx_packets_total":   snapshot.RxPackets,
-		"tx_packets_total":   snapshot.TxPackets,
-		"ids_alerts_total":   snapshot.IDSAlerts,
-		"ids_drops_total":    snapshot.IDSDrops,
-		"config_apply_total": snapshot.ConfigApply,
-		"config_rollback_total": snapshot.ConfigRollback,
+		"status":                    "ok",
+		"routes_count":              len(h.Routes.Routes()),
+		"packets_total":             snapshot.Packets,
+		"rx_packets_total":          snapshot.RxPackets,
+		"tx_packets_total":          snapshot.TxPackets,
+		"ids_alerts_total":          snapshot.IDSAlerts,
+		"ids_drops_total":           snapshot.IDSDrops,
+		"config_apply_total":        snapshot.ConfigApply,
+		"config_rollback_total":     snapshot.ConfigRollback,
 		"config_apply_failed_total": snapshot.ConfigApplyFailed,
-		"p2p_peers_total": snapshot.P2PPeers,
-		"p2p_routes_synced_total": snapshot.P2PRoutesSynced,
-		"proxy_cache_hits_total": snapshot.ProxyCacheHits,
-		"proxy_cache_miss_total": snapshot.ProxyCacheMiss,
-		"proxy_compress_total": snapshot.ProxyCompress,
-		"bytes_total":        snapshot.Bytes,
-		"errors_total":       snapshot.Errors,
-		"drops_total":        snapshot.Drops,
-		"drops_by_reason":    snapshot.DropsByReason,
-		"qos_drops_by_class": snapshot.QoSDropsByClass,
+		"p2p_peers_total":           snapshot.P2PPeers,
+		"p2p_routes_synced_total":   snapshot.P2PRoutesSynced,
+		"proxy_cache_hits_total":    snapshot.ProxyCacheHits,
+		"proxy_cache_miss_total":    snapshot.ProxyCacheMiss,
+		"proxy_compress_total":      snapshot.ProxyCompress,
+		"bytes_total":               snapshot.Bytes,
+		"errors_total":              snapshot.Errors,
+		"drops_total":               snapshot.Drops,
+		"drops_by_reason":           snapshot.DropsByReason,
+		"qos_drops_by_class":        snapshot.QoSDropsByClass,
 	})
 }
 

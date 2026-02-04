@@ -14,7 +14,7 @@ func StartHTTP3Server(ctx context.Context, addr, certFile, keyFile string, handl
 		return err
 	}
 	server := &http3.Server{
-		Addr:    addr,
+		Addr: addr,
 		TLSConfig: &tls.Config{
 			Certificates: []tls.Certificate{cert},
 			NextProtos:   []string{"h3"},

@@ -3,14 +3,224 @@
   <head>
     <meta charset="utf-8">
     <title>RouterGo Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      body { font-family: Arial, sans-serif; margin: 20px; background: #f6f7fb; color: #1d1f23; }
+      h1 { margin-bottom: 6px; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+      .card { background: #fff; border-radius: 10px; padding: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+      .meta { font-size: 12px; color: #6b7280; }
+      .alerts { max-height: 220px; overflow: auto; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      th, td { padding: 6px; border-bottom: 1px solid #eee; text-align: left; }
+      .badge { display: inline-block; padding: 2px 6px; border-radius: 6px; font-size: 11px; background: #eef2ff; color: #3730a3; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
   <body>
     <h1>RouterGo Dashboard</h1>
-    <p>Статические страницы в разработке. Используйте API:</p>
-    <ul>
-      <li>/api/dashboard/top/bandwidth</li>
-      <li>/api/dashboard/sessions/tree</li>
-      <li>/api/dashboard/alerts</li>
-    </ul>
+    <div class="meta">Автообновление</div>
+    <div style="margin: 10px 0; display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
+      <button id="refreshBtn">Обновить сейчас</button>
+      <label>
+        <input type="checkbox" id="demoMode"> Демо-данные
+      </label>
+      <label>
+        Интервал:
+        <select id="refreshInterval">
+          <option value="2000">2с</option>
+          <option value="5000" selected>5с</option>
+          <option value="10000">10с</option>
+        </select>
+      </label>
+      <label>
+        Фильтр src:
+        <select id="srcFilter">
+          <option value="">Все</option>
+        </select>
+      </label>
+    </div>
+    <div class="grid" style="margin-top: 12px;">
+      <div class="card">
+        <h3>Top bandwidth (src IP)</h3>
+        <canvas id="topChart" height="140"></canvas>
+      </div>
+      <div class="card">
+        <h3>История трафика (top src)</h3>
+        <canvas id="historyChart" height="140"></canvas>
+      </div>
+      <div class="card">
+        <h3>Sessions tree</h3>
+        <div class="meta">Суммарные байты по направлению</div>
+        <table id="sessionsTable">
+          <thead>
+            <tr><th>Src</th><th>Dst</th><th>Bytes</th><th>Packets</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h3>Alerts</h3>
+        <div class="alerts" id="alerts"></div>
+      </div>
+    </div>
+
+    <script>
+      const topCtx = document.getElementById('topChart');
+      const historyCtx = document.getElementById('historyChart');
+      let topChart = new Chart(topCtx, {
+        type: 'bar',
+        data: { labels: [], datasets: [{ label: 'Bytes', data: [], backgroundColor: '#3b82f6' }] },
+        options: { responsive: true, plugins: { legend: { display: false } } }
+      });
+      let historyChart = new Chart(historyCtx, {
+        type: 'line',
+        data: { labels: [], datasets: [{ label: 'Bytes', data: [], borderColor: '#10b981', fill: false, tension: 0.2 }] },
+        options: { responsive: true, plugins: { legend: { display: false } } }
+      });
+
+      let history = [];
+      let refreshTimer = null;
+
+      function demoTop() {
+        const labels = Array.from({length: 8}, (_, i) => `10.0.0.${i+1}`);
+        return labels.map((l, i) => ({ src_ip: l, bytes: (8 - i) * 1000 + Math.floor(Math.random()*800) }));
+      }
+
+      function demoSessions() {
+        const data = {};
+        for (let s = 1; s <= 4; s++) {
+          const src = `10.0.0.${s}`;
+          data[src] = [];
+          for (let d = 1; d <= 3; d++) {
+            data[src].push({ dst_ip: `1.1.1.${d}`, bytes: Math.floor(Math.random()*5000), packets: Math.floor(Math.random()*50) });
+          }
+        }
+        return data;
+      }
+
+      function demoAlerts() {
+        const now = new Date().toISOString();
+        return [
+          { type: 'PORT_SCAN', src_ip: '10.0.0.5', dst_ip: '1.1.1.1', reason: 'port_scan', protocol: 'TCP', timestamp: now },
+          { type: 'RATE_SPIKE', src_ip: '10.0.0.8', dst_ip: '8.8.8.8', reason: 'rate_threshold', protocol: 'UDP', timestamp: now }
+        ];
+      }
+
+      async function loadTop() {
+        if (document.getElementById('demoMode').checked) {
+          return demoTop();
+        }
+        const res = await fetch('/api/dashboard/top/bandwidth?limit=10');
+        const data = await res.json();
+        return data.length ? data : demoTop();
+      }
+
+      async function loadSessions() {
+        if (document.getElementById('demoMode').checked) {
+          return demoSessions();
+        }
+        const res = await fetch('/api/dashboard/sessions/tree');
+        const data = await res.json();
+        return Object.keys(data).length ? data : demoSessions();
+      }
+
+      async function loadAlerts() {
+        if (document.getElementById('demoMode').checked) {
+          return demoAlerts();
+        }
+        const res = await fetch('/api/dashboard/alerts');
+        const data = await res.json();
+        return Array.isArray(data) && data.length ? data : demoAlerts();
+      }
+
+      function renderTop(data) {
+        topChart.data.labels = data.map(x => x.src_ip);
+        topChart.data.datasets[0].data = data.map(x => x.bytes);
+        topChart.update();
+      }
+
+      function renderHistory(topData) {
+        if (!topData.length) {
+          return;
+        }
+        const top = topData[0];
+        const now = new Date().toLocaleTimeString();
+        history.push({ t: now, v: top.bytes, src: top.src_ip });
+        if (history.length > 30) {
+          history = history.slice(-30);
+        }
+        historyChart.data.labels = history.map(h => h.t);
+        historyChart.data.datasets[0].data = history.map(h => h.v);
+        historyChart.update();
+      }
+
+      function renderSessions(data) {
+        const rows = [];
+        const filter = document.getElementById('srcFilter').value;
+        Object.keys(data).forEach(src => {
+          if (filter && src !== filter) {
+            return;
+          }
+          data[src].forEach(dst => {
+            rows.push({ src, dst: dst.dst_ip, bytes: dst.bytes, packets: dst.packets });
+          });
+        });
+        rows.sort((a, b) => b.bytes - a.bytes);
+        const tbody = document.querySelector('#sessionsTable tbody');
+        tbody.innerHTML = rows.slice(0, 20).map(r =>
+          `<tr><td>${r.src}</td><td>${r.dst}</td><td>${r.bytes}</td><td>${r.packets}</td></tr>`
+        ).join('');
+      }
+
+      function renderAlerts(data) {
+        const container = document.getElementById('alerts');
+        if (!Array.isArray(data) || data.length === 0) {
+          container.innerHTML = '<div class="meta">Нет алертов</div>';
+          return;
+        }
+        container.innerHTML = data.slice(-50).reverse().map(a =>
+          `<div style="margin-bottom:8px;">
+            <span class="badge">${a.type || 'ALERT'}</span>
+            <strong>${a.src_ip || '-'}</strong> → <strong>${a.dst_ip || '-'}</strong>
+            <div class="meta">${a.reason || ''} ${a.protocol || ''} ${a.timestamp || ''}</div>
+          </div>`
+        ).join('');
+      }
+
+      function updateFilterOptions(topData) {
+        const select = document.getElementById('srcFilter');
+        const current = select.value;
+        const options = [''].concat(topData.map(x => x.src_ip));
+        select.innerHTML = options.map(v => `<option value="${v}">${v || 'Все'}</option>`).join('');
+        select.value = options.includes(current) ? current : '';
+      }
+
+      async function refreshAll() {
+        try {
+          const [top, sessions, alerts] = await Promise.all([loadTop(), loadSessions(), loadAlerts()]);
+          renderTop(top);
+          updateFilterOptions(top);
+          renderHistory(top);
+          renderSessions(sessions);
+          renderAlerts(alerts);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      refreshAll();
+      function startTimer() {
+        if (refreshTimer) {
+          clearInterval(refreshTimer);
+        }
+        const interval = parseInt(document.getElementById('refreshInterval').value, 10);
+        refreshTimer = setInterval(refreshAll, interval);
+      }
+      startTimer();
+      document.getElementById('refreshBtn').addEventListener('click', refreshAll);
+      document.getElementById('refreshInterval').addEventListener('change', startTimer);
+      document.getElementById('srcFilter').addEventListener('change', refreshAll);
+    </script>
   </body>
 </html>
