@@ -19,6 +19,7 @@ func TestSignatureRuleMatch(t *testing.T) {
 		SrcNet:          srcNet,
 		DstPort:         80,
 		PayloadContains: "GET",
+		Enabled:         true,
 	})
 
 	pkt := network.Packet{
@@ -38,6 +39,67 @@ func TestSignatureRuleMatch(t *testing.T) {
 	}
 	if res.Alert == nil || res.Alert.Type != "SIGNATURE" {
 		t.Fatalf("expected signature alert")
+	}
+}
+
+func TestRulePriority(t *testing.T) {
+	engine := NewEngine(Config{AlertLimit: 10})
+	engine.AddRule(Rule{
+		Name:     "low",
+		Action:   ActionAlert,
+		Protocol: "TCP",
+		DstPort:  80,
+		Priority: 1,
+		Enabled:  true,
+	})
+	engine.AddRule(Rule{
+		Name:     "high",
+		Action:   ActionDrop,
+		Protocol: "TCP",
+		DstPort:  80,
+		Priority: 10,
+		Enabled:  true,
+	})
+
+	res := engine.Detect(network.Packet{
+		Metadata: network.PacketMetadata{
+			Protocol: "TCP",
+			SrcIP:    net.ParseIP("10.0.0.1"),
+			DstIP:    net.ParseIP("1.1.1.1"),
+			DstPort:  80,
+		},
+	})
+	if res.Alert == nil || res.Alert.Reason != "high" {
+		t.Fatalf("expected high priority rule to match")
+	}
+	if !res.Drop {
+		t.Fatalf("expected drop for high priority rule")
+	}
+}
+
+func TestWhitelistSkipsDetection(t *testing.T) {
+	_, whiteNet, _ := net.ParseCIDR("10.1.0.0/16")
+	engine := NewEngine(Config{
+		WhitelistSrc: []*net.IPNet{whiteNet},
+		AlertLimit:   10,
+	})
+	engine.AddRule(Rule{
+		Name:     "test",
+		Action:   ActionDrop,
+		Protocol: "TCP",
+		DstPort:  80,
+		Enabled:  true,
+	})
+	res := engine.Detect(network.Packet{
+		Metadata: network.PacketMetadata{
+			Protocol: "TCP",
+			SrcIP:    net.ParseIP("10.1.2.3"),
+			DstIP:    net.ParseIP("1.1.1.1"),
+			DstPort:  80,
+		},
+	})
+	if res.Alert != nil || res.Drop {
+		t.Fatalf("expected whitelist to bypass detection")
 	}
 }
 

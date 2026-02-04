@@ -24,6 +24,8 @@ type Metrics struct {
 	TxPacketsTotal         prometheus.Counter
 	IDSAlertsTotal         prometheus.Counter
 	IDSDropsTotal          prometheus.Counter
+	IDSAlertsByType        *prometheus.CounterVec
+	IDSAlertsByRule        *prometheus.CounterVec
 	ConfigApplyTotal       prometheus.Counter
 	ConfigRollbackTotal    prometheus.Counter
 	ConfigApplyFailedTotal prometheus.Counter
@@ -51,6 +53,8 @@ type Metrics struct {
 	mu                     sync.Mutex
 	dropsByReason          map[string]uint64
 	qosDropsByClass        map[string]uint64
+	idsAlertsByType        map[string]uint64
+	idsAlertsByRule        map[string]uint64
 }
 
 func New() *Metrics {
@@ -99,6 +103,14 @@ func NewWithRegistry(reg prometheus.Registerer) *Metrics {
 			Name: "router_ids_drops_total",
 			Help: "Total number of IDS drops",
 		}),
+		IDSAlertsByType: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "router_ids_alerts_by_type_total",
+			Help: "IDS alerts by type",
+		}, []string{"type"}),
+		IDSAlertsByRule: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "router_ids_alerts_by_rule_total",
+			Help: "IDS alerts by rule",
+		}, []string{"rule"}),
 		ConfigApplyTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "router_config_apply_total",
 			Help: "Total number of config apply operations",
@@ -133,6 +145,8 @@ func NewWithRegistry(reg prometheus.Registerer) *Metrics {
 		}),
 		dropsByReason:   map[string]uint64{},
 		qosDropsByClass: map[string]uint64{},
+		idsAlertsByType: map[string]uint64{},
+		idsAlertsByRule: map[string]uint64{},
 	}
 	if reg == nil {
 		reg = prometheus.DefaultRegisterer
@@ -148,6 +162,8 @@ func NewWithRegistry(reg prometheus.Registerer) *Metrics {
 		m.TxPacketsTotal,
 		m.IDSAlertsTotal,
 		m.IDSDropsTotal,
+		m.IDSAlertsByType,
+		m.IDSAlertsByRule,
 		m.ConfigApplyTotal,
 		m.ConfigRollbackTotal,
 		m.ConfigApplyFailedTotal,
@@ -225,6 +241,26 @@ func (m *Metrics) IncIDSDrop() {
 	m.IDSDropsTotal.Inc()
 }
 
+func (m *Metrics) IncIDSAlertType(alertType string) {
+	if alertType == "" {
+		return
+	}
+	m.IDSAlertsByType.WithLabelValues(alertType).Inc()
+	m.mu.Lock()
+	m.idsAlertsByType[alertType]++
+	m.mu.Unlock()
+}
+
+func (m *Metrics) IncIDSAlertRule(rule string) {
+	if rule == "" {
+		return
+	}
+	m.IDSAlertsByRule.WithLabelValues(rule).Inc()
+	m.mu.Lock()
+	m.idsAlertsByRule[rule]++
+	m.mu.Unlock()
+}
+
 func (m *Metrics) IncConfigApply() {
 	m.configApplyCount.Add(1)
 	m.ConfigApplyTotal.Inc()
@@ -276,6 +312,8 @@ type Snapshot struct {
 	TxPackets         uint64
 	IDSAlerts         uint64
 	IDSDrops          uint64
+	IDSAlertsByType   map[string]uint64
+	IDSAlertsByRule   map[string]uint64
 	ConfigApply       uint64
 	ConfigRollback    uint64
 	ConfigApplyFailed uint64
@@ -296,6 +334,14 @@ func (m *Metrics) Snapshot() Snapshot {
 	for k, v := range m.qosDropsByClass {
 		qosDrops[k] = v
 	}
+	idsTypes := make(map[string]uint64, len(m.idsAlertsByType))
+	for k, v := range m.idsAlertsByType {
+		idsTypes[k] = v
+	}
+	idsRules := make(map[string]uint64, len(m.idsAlertsByRule))
+	for k, v := range m.idsAlertsByRule {
+		idsRules[k] = v
+	}
 	m.mu.Unlock()
 	return Snapshot{
 		Packets:           m.packetsCount.Load(),
@@ -308,6 +354,8 @@ func (m *Metrics) Snapshot() Snapshot {
 		TxPackets:         m.txPacketsCount.Load(),
 		IDSAlerts:         m.idsAlertsCount.Load(),
 		IDSDrops:          m.idsDropsCount.Load(),
+		IDSAlertsByType:   idsTypes,
+		IDSAlertsByRule:   idsRules,
 		ConfigApply:       m.configApplyCount.Load(),
 		ConfigRollback:    m.configRollbackCount.Load(),
 		ConfigApplyFailed: m.configApplyFailedCount.Load(),

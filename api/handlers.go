@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"router-go/internal/config"
 	"router-go/internal/metrics"
@@ -115,6 +116,8 @@ func (h *Handlers) GetStats(c *gin.Context) {
 		"tx_packets_total":          snapshot.TxPackets,
 		"ids_alerts_total":          snapshot.IDSAlerts,
 		"ids_drops_total":           snapshot.IDSDrops,
+		"ids_alerts_by_type":        snapshot.IDSAlertsByType,
+		"ids_alerts_by_rule":        snapshot.IDSAlertsByRule,
 		"config_apply_total":        snapshot.ConfigApply,
 		"config_rollback_total":     snapshot.ConfigRollback,
 		"config_apply_failed_total": snapshot.ConfigApplyFailed,
@@ -230,10 +233,14 @@ func (h *Handlers) GetIDSRules(c *gin.Context) {
 		SrcPort         int    `json:"src_port,omitempty"`
 		DstPort         int    `json:"dst_port,omitempty"`
 		PayloadContains string `json:"payload_contains,omitempty"`
+		Priority        int    `json:"priority"`
+		Enabled         bool   `json:"enabled"`
+		Hits            uint64 `json:"hits"`
 	}
-	rules := h.IDS.Rules()
+	rules := h.IDS.RulesWithStats()
 	out := make([]ruleView, 0, len(rules))
-	for _, r := range rules {
+	for _, entry := range rules {
+		r := entry.Rule
 		view := ruleView{
 			Name:            r.Name,
 			Action:          string(r.Action),
@@ -241,6 +248,9 @@ func (h *Handlers) GetIDSRules(c *gin.Context) {
 			SrcPort:         r.SrcPort,
 			DstPort:         r.DstPort,
 			PayloadContains: r.PayloadContains,
+			Priority:        r.Priority,
+			Enabled:         r.Enabled,
+			Hits:            entry.Hits,
 		}
 		if r.SrcNet != nil {
 			view.SrcCIDR = r.SrcNet.String()
@@ -267,6 +277,8 @@ func (h *Handlers) AddIDSRule(c *gin.Context) {
 		SrcPort         int    `json:"src_port"`
 		DstPort         int    `json:"dst_port"`
 		PayloadContains string `json:"payload_contains"`
+		Priority        int    `json:"priority"`
+		Enabled         *bool  `json:"enabled"`
 	}
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
@@ -304,8 +316,130 @@ func (h *Handlers) AddIDSRule(c *gin.Context) {
 		SrcPort:         req.SrcPort,
 		DstPort:         req.DstPort,
 		PayloadContains: req.PayloadContains,
+		Priority:        req.Priority,
+		Enabled:         true,
+	}
+	if req.Enabled != nil {
+		rule.Enabled = *req.Enabled
 	}
 	h.IDS.AddRule(rule)
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *Handlers) UpdateIDSRule(c *gin.Context) {
+	if h.IDS == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ids disabled"})
+		return
+	}
+	name := c.Param("name")
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+	existing, ok := h.IDS.GetRule(name)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+		return
+	}
+	var req struct {
+		Action          string `json:"action"`
+		Protocol        string `json:"protocol"`
+		SrcCIDR         string `json:"src_cidr"`
+		DstCIDR         string `json:"dst_cidr"`
+		SrcPort         int    `json:"src_port"`
+		DstPort         int    `json:"dst_port"`
+		PayloadContains string `json:"payload_contains"`
+		Priority        int    `json:"priority"`
+		Enabled         *bool  `json:"enabled"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	var srcNet *net.IPNet
+	if req.SrcCIDR != "" {
+		_, parsed, err := net.ParseCIDR(req.SrcCIDR)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid src_cidr"})
+			return
+		}
+		srcNet = parsed
+	} else {
+		srcNet = existing.SrcNet
+	}
+	var dstNet *net.IPNet
+	if req.DstCIDR != "" {
+		_, parsed, err := net.ParseCIDR(req.DstCIDR)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid dst_cidr"})
+			return
+		}
+		dstNet = parsed
+	} else {
+		dstNet = existing.DstNet
+	}
+
+	action := req.Action
+	if action == "" {
+		action = string(existing.Action)
+	}
+	protocol := req.Protocol
+	if protocol == "" {
+		protocol = existing.Protocol
+	}
+	srcPort := req.SrcPort
+	if srcPort == 0 {
+		srcPort = existing.SrcPort
+	}
+	dstPort := req.DstPort
+	if dstPort == 0 {
+		dstPort = existing.DstPort
+	}
+	payload := req.PayloadContains
+	if payload == "" {
+		payload = existing.PayloadContains
+	}
+	priority := req.Priority
+	if priority == 0 {
+		priority = existing.Priority
+	}
+
+	rule := ids.Rule{
+		Name:            name,
+		Action:          ids.Action(strings.ToUpper(action)),
+		Protocol:        protocol,
+		SrcNet:          srcNet,
+		DstNet:          dstNet,
+		SrcPort:         srcPort,
+		DstPort:         dstPort,
+		PayloadContains: payload,
+		Priority:        priority,
+		Enabled:         existing.Enabled,
+	}
+	if req.Enabled != nil {
+		rule.Enabled = *req.Enabled
+	}
+	if ok := h.IDS.UpdateRule(name, rule); !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *Handlers) DeleteIDSRule(c *gin.Context) {
+	if h.IDS == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ids disabled"})
+		return
+	}
+	name := c.Param("name")
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+	if ok := h.IDS.DeleteRule(name); !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
@@ -314,7 +448,30 @@ func (h *Handlers) GetIDSAlerts(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ids disabled"})
 		return
 	}
-	c.JSON(http.StatusOK, h.IDS.Alerts())
+	alertType := strings.TrimSpace(c.Query("type"))
+	srcIP := strings.TrimSpace(c.Query("src_ip"))
+	sinceValue := strings.TrimSpace(c.Query("since"))
+	var since time.Time
+	if sinceValue != "" {
+		if parsed, err := time.Parse(time.RFC3339, sinceValue); err == nil {
+			since = parsed
+		}
+	}
+	alerts := h.IDS.Alerts()
+	filtered := make([]ids.Alert, 0, len(alerts))
+	for _, alert := range alerts {
+		if alertType != "" && !strings.EqualFold(alert.Type, alertType) {
+			continue
+		}
+		if srcIP != "" && alert.SrcIP != srcIP {
+			continue
+		}
+		if !since.IsZero() && alert.Timestamp.Before(since) {
+			continue
+		}
+		filtered = append(filtered, alert)
+	}
+	c.JSON(http.StatusOK, filtered)
 }
 
 func (h *Handlers) ResetIDS(c *gin.Context) {

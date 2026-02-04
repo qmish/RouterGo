@@ -83,6 +83,8 @@ type IDSConfig struct {
 	UniqueDstThreshold int    `mapstructure:"unique_dst_threshold"`
 	BehaviorAction     string `mapstructure:"behavior_action"`
 	AlertLimit         int    `mapstructure:"alert_limit"`
+	WhitelistSrc       []string `mapstructure:"whitelist_src"`
+	WhitelistDst       []string `mapstructure:"whitelist_dst"`
 }
 
 type SelfHealConfig struct {

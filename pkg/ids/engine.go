@@ -3,6 +3,7 @@ package ids
 import (
 	"bytes"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,8 @@ type Rule struct {
 	SrcPort         int
 	DstPort         int
 	PayloadContains string
+	Priority        int
+	Enabled         bool
 }
 
 type Alert struct {
@@ -47,6 +50,8 @@ type Config struct {
 	UniqueDstThreshold int
 	BehaviorAction     Action
 	AlertLimit         int
+	WhitelistSrc       []*net.IPNet
+	WhitelistDst       []*net.IPNet
 }
 
 type Engine struct {
@@ -54,6 +59,7 @@ type Engine struct {
 	rules   []Rule
 	alerts  []Alert
 	stats   map[string]*ipStats
+	ruleHits map[string]uint64
 	cfg     Config
 	nowFunc func() time.Time
 }
@@ -93,6 +99,7 @@ func NewEngine(cfg Config) *Engine {
 		rules:   nil,
 		alerts:  nil,
 		stats:   map[string]*ipStats{},
+		ruleHits: map[string]uint64{},
 		cfg:     cfg,
 		nowFunc: time.Now,
 	}
@@ -105,6 +112,37 @@ func (e *Engine) AddRule(rule Rule) {
 		rule.Action = ActionAlert
 	}
 	e.rules = append(e.rules, rule)
+	e.sortRules()
+}
+
+func (e *Engine) UpdateRule(name string, rule Rule) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for i, existing := range e.rules {
+		if existing.Name == name {
+			if rule.Action == "" {
+				rule.Action = ActionAlert
+			}
+			rule.Name = name
+			e.rules[i] = rule
+			e.sortRules()
+			return true
+		}
+	}
+	return false
+}
+
+func (e *Engine) DeleteRule(name string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for i, rule := range e.rules {
+		if rule.Name == name {
+			e.rules = append(e.rules[:i], e.rules[i+1:]...)
+			delete(e.ruleHits, name)
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Engine) Rules() []Rule {
@@ -115,6 +153,17 @@ func (e *Engine) Rules() []Rule {
 	return out
 }
 
+func (e *Engine) GetRule(name string) (Rule, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, rule := range e.rules {
+		if rule.Name == name {
+			return rule, true
+		}
+	}
+	return Rule{}, false
+}
+
 func (e *Engine) Alerts() []Alert {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -123,11 +172,30 @@ func (e *Engine) Alerts() []Alert {
 	return out
 }
 
+type RuleWithStats struct {
+	Rule Rule
+	Hits uint64
+}
+
+func (e *Engine) RulesWithStats() []RuleWithStats {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make([]RuleWithStats, 0, len(e.rules))
+	for _, rule := range e.rules {
+		out = append(out, RuleWithStats{
+			Rule: rule,
+			Hits: e.ruleHits[rule.Name],
+		})
+	}
+	return out
+}
+
 func (e *Engine) Reset() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.alerts = nil
 	e.stats = map[string]*ipStats{}
+	e.ruleHits = map[string]uint64{}
 }
 
 func (e *Engine) Detect(pkt network.Packet) Result {
@@ -136,6 +204,9 @@ func (e *Engine) Detect(pkt network.Packet) Result {
 
 	srcIP := pkt.Metadata.SrcIP
 	if srcIP == nil {
+		return Result{}
+	}
+	if e.isWhitelisted(pkt) {
 		return Result{}
 	}
 
@@ -152,6 +223,9 @@ func (e *Engine) Detect(pkt network.Packet) Result {
 
 func (e *Engine) matchSignature(pkt network.Packet) (Result, bool) {
 	for _, rule := range e.rules {
+		if !rule.Enabled {
+			continue
+		}
 		if rule.Protocol != "" && !strings.EqualFold(rule.Protocol, pkt.Metadata.Protocol) {
 			continue
 		}
@@ -171,6 +245,7 @@ func (e *Engine) matchSignature(pkt network.Packet) (Result, bool) {
 			continue
 		}
 
+		e.ruleHits[rule.Name]++
 		alert := e.addAlert(Alert{
 			Type:      "SIGNATURE",
 			Severity:  "high",
@@ -273,4 +348,24 @@ func (e *Engine) addAlert(alert Alert) Alert {
 	}
 	e.alerts = append(e.alerts, alert)
 	return alert
+}
+
+func (e *Engine) isWhitelisted(pkt network.Packet) bool {
+	for _, netw := range e.cfg.WhitelistSrc {
+		if netw != nil && pkt.Metadata.SrcIP != nil && netw.Contains(pkt.Metadata.SrcIP) {
+			return true
+		}
+	}
+	for _, netw := range e.cfg.WhitelistDst {
+		if netw != nil && pkt.Metadata.DstIP != nil && netw.Contains(pkt.Metadata.DstIP) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *Engine) sortRules() {
+	sort.SliceStable(e.rules, func(i, j int) bool {
+		return e.rules[i].Priority > e.rules[j].Priority
+	})
 }

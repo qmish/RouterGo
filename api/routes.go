@@ -13,6 +13,8 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	router.GET("/api/stats", handlers.GetStats)
 	router.GET("/api/ids/rules", handlers.GetIDSRules)
 	router.POST("/api/ids/rules", handlers.AddIDSRule)
+	router.PUT("/api/ids/rules/:name", handlers.UpdateIDSRule)
+	router.DELETE("/api/ids/rules/:name", handlers.DeleteIDSRule)
 	router.GET("/api/ids/alerts", handlers.GetIDSAlerts)
 	router.POST("/api/ids/reset", handlers.ResetIDS)
 	router.POST("/api/config/apply", handlers.ApplyConfig)
