@@ -14,16 +14,16 @@ import (
 )
 
 type Metrics struct {
-	PacketsTotal prometheus.Counter
-	BytesTotal   prometheus.Counter
-	ErrorsTotal  prometheus.Counter
-	DropsTotal   prometheus.Counter
+	PacketsTotal  prometheus.Counter
+	BytesTotal    prometheus.Counter
+	ErrorsTotal   prometheus.Counter
+	DropsTotal    prometheus.Counter
 	DropsByReason *prometheus.CounterVec
-	packetsCount atomic.Uint64
-	bytesCount   atomic.Uint64
-	errorsCount  atomic.Uint64
-	dropsCount   atomic.Uint64
-	mu           sync.Mutex
+	packetsCount  atomic.Uint64
+	bytesCount    atomic.Uint64
+	errorsCount   atomic.Uint64
+	dropsCount    atomic.Uint64
+	mu            sync.Mutex
 	dropsByReason map[string]uint64
 }
 
@@ -97,10 +97,10 @@ func (m *Metrics) IncDropReason(reason string) {
 }
 
 type Snapshot struct {
-	Packets uint64
-	Bytes   uint64
-	Errors  uint64
-	Drops   uint64
+	Packets       uint64
+	Bytes         uint64
+	Errors        uint64
+	Drops         uint64
 	DropsByReason map[string]uint64
 }
 

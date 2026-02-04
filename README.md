@@ -18,6 +18,7 @@ go build -o router cmd/router/main.go
 
 Пример конфигурации находится в `config/config.yaml`.
 По умолчанию политики firewall задаются в `firewall_defaults` (input/output/forward).
+Для QoS доступен параметр `drop_policy` (tail/head) при заполнении очереди.
 
 ## REST API
 

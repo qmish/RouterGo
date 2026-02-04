@@ -97,12 +97,12 @@ func (h *Handlers) AddFirewallRule(c *gin.Context) {
 func (h *Handlers) GetStats(c *gin.Context) {
 	snapshot := h.Metrics.Snapshot()
 	c.JSON(http.StatusOK, gin.H{
-		"status":        "ok",
-		"routes_count":  len(h.Routes.Routes()),
-		"packets_total": snapshot.Packets,
-		"bytes_total":   snapshot.Bytes,
-		"errors_total":  snapshot.Errors,
-		"drops_total":   snapshot.Drops,
+		"status":          "ok",
+		"routes_count":    len(h.Routes.Routes()),
+		"packets_total":   snapshot.Packets,
+		"bytes_total":     snapshot.Bytes,
+		"errors_total":    snapshot.Errors,
+		"drops_total":     snapshot.Drops,
 		"drops_by_reason": snapshot.DropsByReason,
 	})
 }
@@ -273,6 +273,7 @@ func (h *Handlers) AddQoSClass(c *gin.Context) {
 		RateLimitKbps int    `json:"rate_limit_kbps"`
 		Priority      int    `json:"priority"`
 		MaxQueue      int    `json:"max_queue"`
+		DropPolicy    string `json:"drop_policy"`
 	}
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
@@ -291,6 +292,7 @@ func (h *Handlers) AddQoSClass(c *gin.Context) {
 		RateLimitKbps: req.RateLimitKbps,
 		Priority:      req.Priority,
 		MaxQueue:      req.MaxQueue,
+		DropPolicy:    req.DropPolicy,
 	}
 	h.QoS.AddClass(class)
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})

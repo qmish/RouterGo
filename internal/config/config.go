@@ -66,6 +66,7 @@ type QoSClassConfig struct {
 	RateLimitKbps int    `mapstructure:"rate_limit_kbps"`
 	Priority      int    `mapstructure:"priority"`
 	MaxQueue      int    `mapstructure:"max_queue"`
+	DropPolicy    string `mapstructure:"drop_policy"`
 }
 
 type APIConfig struct {

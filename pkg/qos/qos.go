@@ -16,6 +16,7 @@ type Class struct {
 	RateLimitKbps int
 	Priority      int
 	MaxQueue      int
+	DropPolicy    string
 }
 
 type Classifier struct {
@@ -59,16 +60,23 @@ func NewQueueManager(classes []Class) *QueueManager {
 	}
 }
 
-func (q *QueueManager) Enqueue(pkt network.Packet) bool {
+func (q *QueueManager) Enqueue(pkt network.Packet) (bool, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	class := q.classify(pkt)
 	queue := q.queues[class.Name]
 	if class.MaxQueue > 0 && len(queue) >= class.MaxQueue {
-		return false
+		switch normalizeDropPolicy(class.DropPolicy) {
+		case "head":
+			queue = queue[1:]
+			q.queues[class.Name] = append(queue, pkt)
+			return true, true
+		default:
+			return false, true
+		}
 	}
 	q.queues[class.Name] = append(queue, pkt)
-	return true
+	return true, false
 }
 
 func (q *QueueManager) Dequeue() (network.Packet, bool) {
@@ -149,6 +157,15 @@ func packetSize(pkt network.Packet) int64 {
 		return int64(pkt.Metadata.Length)
 	}
 	return int64(len(pkt.Data))
+}
+
+func normalizeDropPolicy(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "head":
+		return "head"
+	default:
+		return "tail"
+	}
 }
 
 func normalizeClasses(classes []Class) []Class {
