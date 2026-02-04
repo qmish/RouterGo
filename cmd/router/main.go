@@ -20,6 +20,7 @@ import (
 	"router-go/pkg/ids"
 	"router-go/pkg/nat"
 	"router-go/pkg/network"
+	"router-go/pkg/p2p"
 	"router-go/pkg/qos"
 	"router-go/pkg/routing"
 
@@ -55,6 +56,7 @@ func main() {
 	qosQueue := buildQoSQueue(cfg)
 	cfgManager := config.NewManager(cfg, config.DefaultHealthCheck)
 	flowEngine := flow.NewEngine()
+	p2pEngine := buildP2P(cfg, routeTable, metricsSrv, log, ctx)
 
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -68,6 +70,7 @@ func main() {
 		NAT:      natTable,
 		QoS:      qosQueue,
 		Flow:     flowEngine,
+		P2P:      p2pEngine,
 		ConfigMgr: cfgManager,
 		Metrics:  metricsSrv,
 	}
@@ -354,6 +357,24 @@ func buildIDS(cfg *config.Config) *ids.Engine {
 		BehaviorAction:    action,
 		AlertLimit:        cfg.IDS.AlertLimit,
 	})
+}
+
+func buildP2P(cfg *config.Config, table *routing.Table, metricsSrv *metrics.Metrics, log *logger.Logger, ctx context.Context) *p2p.Engine {
+	if !cfg.P2P.Enabled {
+		return nil
+	}
+	engine := p2p.NewEngine(p2p.Config{
+		PeerID:        cfg.P2P.PeerID,
+		Discovery:     cfg.P2P.Discovery,
+		SyncInterval:  time.Duration(cfg.P2P.SyncInterval) * time.Second,
+		ListenAddr:    cfg.P2P.ListenAddr,
+		MulticastAddr: cfg.P2P.MulticastAddr,
+	}, table, nil, metricsSrv.IncP2PPeer, metricsSrv.IncP2PRouteSynced)
+
+	if err := engine.Start(ctx); err != nil {
+		log.Warn("p2p start failed", map[string]any{"err": err.Error()})
+	}
+	return engine
 }
 
 func buildLocalIPs(cfg *config.Config) []net.IP {

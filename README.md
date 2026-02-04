@@ -45,7 +45,10 @@ go build -o router cmd/router/main.go
 - `GET /api/dashboard/sessions/tree` — дерево сессий
 - `GET /api/dashboard/alerts` — алерты в реальном времени
 - `/dashboard` — статические страницы Web Dashboard
-- `GET /api/stats` — базовая статистика (rx/tx/пакеты/байты/ошибки/дропы/причины/классы QoS/конфиг)
+- `GET /api/p2p/peers` — список P2P соседей
+- `GET /api/p2p/routes` — синхронизированные маршруты
+- `POST /api/p2p/reset` — сброс состояния P2P
+- `GET /api/stats` — базовая статистика (rx/tx/пакеты/байты/ошибки/дропы/причины/классы QoS/конфиг/p2p)
 
 ## Примечания
 

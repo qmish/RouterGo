@@ -17,6 +17,7 @@ type Config struct {
 	IDS        IDSConfig            `mapstructure:"ids"`
 	SelfHeal   SelfHealConfig       `mapstructure:"selfheal"`
 	Dashboard  DashboardConfig      `mapstructure:"dashboard"`
+	P2P        P2PConfig            `mapstructure:"p2p"`
 	API        APIConfig            `mapstructure:"api"`
 	Metrics    MetricsConfig        `mapstructure:"metrics"`
 	Logging    LoggingConfig        `mapstructure:"logging"`
@@ -92,6 +93,15 @@ type SelfHealConfig struct {
 type DashboardConfig struct {
 	Enabled   bool   `mapstructure:"enabled"`
 	StaticDir string `mapstructure:"static_dir"`
+}
+
+type P2PConfig struct {
+	Enabled       bool   `mapstructure:"enabled"`
+	PeerID        string `mapstructure:"peer_id"`
+	Discovery     bool   `mapstructure:"discovery"`
+	ListenAddr    string `mapstructure:"listen_addr"`
+	MulticastAddr string `mapstructure:"multicast_addr"`
+	SyncInterval  int    `mapstructure:"sync_interval"`
 }
 
 type APIConfig struct {
@@ -181,6 +191,18 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Dashboard.StaticDir == "" {
 		cfg.Dashboard.StaticDir = "web"
+	}
+	if cfg.P2P.ListenAddr == "" {
+		cfg.P2P.ListenAddr = ":5355"
+	}
+	if cfg.P2P.MulticastAddr == "" {
+		cfg.P2P.MulticastAddr = "224.0.0.251:5355"
+	}
+	if cfg.P2P.SyncInterval == 0 {
+		cfg.P2P.SyncInterval = 10
+	}
+	if cfg.P2P.PeerID == "" {
+		cfg.P2P.PeerID = "node-1"
 	}
 }
 

@@ -21,6 +21,8 @@ func TestMetricsSnapshot(t *testing.T) {
 	m.IncConfigApply()
 	m.IncConfigRollback()
 	m.IncConfigApplyFailed()
+	m.IncP2PPeer()
+	m.IncP2PRouteSynced()
 
 	s := m.Snapshot()
 	if s.Packets != 1 {
@@ -64,5 +66,11 @@ func TestMetricsSnapshot(t *testing.T) {
 	}
 	if s.ConfigApplyFailed != 1 {
 		t.Fatalf("expected config apply failed 1, got %d", s.ConfigApplyFailed)
+	}
+	if s.P2PPeers != 1 {
+		t.Fatalf("expected p2p peers 1, got %d", s.P2PPeers)
+	}
+	if s.P2PRoutesSynced != 1 {
+		t.Fatalf("expected p2p routes synced 1, got %d", s.P2PRoutesSynced)
 	}
 }

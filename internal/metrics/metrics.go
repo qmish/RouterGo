@@ -27,6 +27,8 @@ type Metrics struct {
 	ConfigApplyTotal        prometheus.Counter
 	ConfigRollbackTotal     prometheus.Counter
 	ConfigApplyFailedTotal  prometheus.Counter
+	P2PPeersTotal           prometheus.Counter
+	P2PRoutesSyncedTotal    prometheus.Counter
 	packetsCount    atomic.Uint64
 	bytesCount      atomic.Uint64
 	errorsCount     atomic.Uint64
@@ -38,6 +40,8 @@ type Metrics struct {
 	configApplyCount       atomic.Uint64
 	configRollbackCount    atomic.Uint64
 	configApplyFailedCount atomic.Uint64
+	p2pPeersCount          atomic.Uint64
+	p2pRoutesSyncedCount   atomic.Uint64
 	mu              sync.Mutex
 	dropsByReason   map[string]uint64
 	qosDropsByClass map[string]uint64
@@ -101,6 +105,14 @@ func NewWithRegistry(reg prometheus.Registerer) *Metrics {
 			Name: "router_config_apply_failed_total",
 			Help: "Total number of failed config applies",
 		}),
+		P2PPeersTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "router_p2p_peers_total",
+			Help: "Total number of discovered P2P peers",
+		}),
+		P2PRoutesSyncedTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "router_p2p_routes_synced_total",
+			Help: "Total number of P2P routes synced",
+		}),
 		dropsByReason:   map[string]uint64{},
 		qosDropsByClass: map[string]uint64{},
 	}
@@ -121,6 +133,8 @@ func NewWithRegistry(reg prometheus.Registerer) *Metrics {
 		m.ConfigApplyTotal,
 		m.ConfigRollbackTotal,
 		m.ConfigApplyFailedTotal,
+		m.P2PPeersTotal,
+		m.P2PRoutesSyncedTotal,
 	)
 	return m
 }
@@ -205,6 +219,16 @@ func (m *Metrics) IncConfigApplyFailed() {
 	m.ConfigApplyFailedTotal.Inc()
 }
 
+func (m *Metrics) IncP2PPeer() {
+	m.p2pPeersCount.Add(1)
+	m.P2PPeersTotal.Inc()
+}
+
+func (m *Metrics) IncP2PRouteSynced() {
+	m.p2pRoutesSyncedCount.Add(1)
+	m.P2PRoutesSyncedTotal.Inc()
+}
+
 type Snapshot struct {
 	Packets         uint64
 	Bytes           uint64
@@ -219,6 +243,8 @@ type Snapshot struct {
 	ConfigApply     uint64
 	ConfigRollback  uint64
 	ConfigApplyFailed uint64
+	P2PPeers       uint64
+	P2PRoutesSynced uint64
 }
 
 func (m *Metrics) Snapshot() Snapshot {
@@ -246,6 +272,8 @@ func (m *Metrics) Snapshot() Snapshot {
 		ConfigApply:     m.configApplyCount.Load(),
 		ConfigRollback:  m.configRollbackCount.Load(),
 		ConfigApplyFailed: m.configApplyFailedCount.Load(),
+		P2PPeers:       m.p2pPeersCount.Load(),
+		P2PRoutesSynced: m.p2pRoutesSyncedCount.Load(),
 	}
 }
 
