@@ -20,10 +20,14 @@ type Metrics struct {
 	DropsTotal    prometheus.Counter
 	DropsByReason *prometheus.CounterVec
 	QoSDropsByClass *prometheus.CounterVec
+	RxPacketsTotal prometheus.Counter
+	TxPacketsTotal prometheus.Counter
 	packetsCount  atomic.Uint64
 	bytesCount    atomic.Uint64
 	errorsCount   atomic.Uint64
 	dropsCount    atomic.Uint64
+	rxPacketsCount atomic.Uint64
+	txPacketsCount atomic.Uint64
 	mu            sync.Mutex
 	dropsByReason map[string]uint64
 	qosDropsByClass map[string]uint64
@@ -59,13 +63,30 @@ func NewWithRegistry(reg prometheus.Registerer) *Metrics {
 			Name: "router_qos_drops_by_class_total",
 			Help: "QoS dropped packets by class",
 		}, []string{"class"}),
+		RxPacketsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "router_rx_packets_total",
+			Help: "Total number of packets received",
+		}),
+		TxPacketsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "router_tx_packets_total",
+			Help: "Total number of packets transmitted",
+		}),
 		dropsByReason: map[string]uint64{},
 		qosDropsByClass: map[string]uint64{},
 	}
 	if reg == nil {
 		reg = prometheus.DefaultRegisterer
 	}
-	reg.MustRegister(m.PacketsTotal, m.BytesTotal, m.ErrorsTotal, m.DropsTotal, m.DropsByReason, m.QoSDropsByClass)
+	reg.MustRegister(
+		m.PacketsTotal,
+		m.BytesTotal,
+		m.ErrorsTotal,
+		m.DropsTotal,
+		m.DropsByReason,
+		m.QoSDropsByClass,
+		m.RxPacketsTotal,
+		m.TxPacketsTotal,
+	)
 	return m
 }
 
@@ -114,6 +135,16 @@ func (m *Metrics) IncQoSDrop(class string) {
 	m.mu.Unlock()
 }
 
+func (m *Metrics) IncRxPackets() {
+	m.rxPacketsCount.Add(1)
+	m.RxPacketsTotal.Inc()
+}
+
+func (m *Metrics) IncTxPackets() {
+	m.txPacketsCount.Add(1)
+	m.TxPacketsTotal.Inc()
+}
+
 type Snapshot struct {
 	Packets       uint64
 	Bytes         uint64
@@ -121,6 +152,8 @@ type Snapshot struct {
 	Drops         uint64
 	DropsByReason map[string]uint64
 	QoSDropsByClass map[string]uint64
+	RxPackets    uint64
+	TxPackets    uint64
 }
 
 func (m *Metrics) Snapshot() Snapshot {
@@ -141,6 +174,8 @@ func (m *Metrics) Snapshot() Snapshot {
 		Drops:         m.dropsCount.Load(),
 		DropsByReason: reasons,
 		QoSDropsByClass: qosDrops,
+		RxPackets:     m.rxPacketsCount.Load(),
+		TxPackets:     m.txPacketsCount.Load(),
 	}
 }
 

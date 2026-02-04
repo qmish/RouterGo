@@ -13,6 +13,9 @@ func TestMetricsSnapshot(t *testing.T) {
 	m.IncDropReason("firewall")
 	m.IncQoSDrop("realtime")
 	m.IncQoSDrop("realtime")
+	m.IncRxPackets()
+	m.IncTxPackets()
+	m.IncTxPackets()
 
 	s := m.Snapshot()
 	if s.Packets != 1 {
@@ -35,5 +38,11 @@ func TestMetricsSnapshot(t *testing.T) {
 	}
 	if s.QoSDropsByClass["realtime"] != 2 {
 		t.Fatalf("expected qos drops realtime 2, got %d", s.QoSDropsByClass["realtime"])
+	}
+	if s.RxPackets != 1 {
+		t.Fatalf("expected rx packets 1, got %d", s.RxPackets)
+	}
+	if s.TxPackets != 2 {
+		t.Fatalf("expected tx packets 2, got %d", s.TxPackets)
 	}
 }

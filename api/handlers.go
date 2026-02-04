@@ -100,6 +100,8 @@ func (h *Handlers) GetStats(c *gin.Context) {
 		"status":             "ok",
 		"routes_count":       len(h.Routes.Routes()),
 		"packets_total":      snapshot.Packets,
+		"rx_packets_total":   snapshot.RxPackets,
+		"tx_packets_total":   snapshot.TxPackets,
 		"bytes_total":        snapshot.Bytes,
 		"errors_total":       snapshot.Errors,
 		"drops_total":        snapshot.Drops,
