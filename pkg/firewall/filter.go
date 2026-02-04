@@ -3,6 +3,7 @@ package firewall
 import (
 	"net"
 	"strings"
+	"sync"
 
 	"router-go/pkg/network"
 )
@@ -30,12 +31,15 @@ type Rule struct {
 type Engine struct {
 	rules           []Rule
 	defaultPolicies map[string]Action
+	hits            []uint64
+	mu              sync.Mutex
 }
 
 func NewEngine(rules []Rule) *Engine {
 	return &Engine{
 		rules:           rules,
 		defaultPolicies: map[string]Action{},
+		hits:            make([]uint64, len(rules)),
 	}
 }
 
@@ -47,11 +51,15 @@ func NewEngineWithDefaults(rules []Rule, defaults map[string]Action) *Engine {
 	return &Engine{
 		rules:           rules,
 		defaultPolicies: policies,
+		hits:            make([]uint64, len(rules)),
 	}
 }
 
 func (e *Engine) AddRule(rule Rule) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.rules = append(e.rules, rule)
+	e.hits = append(e.hits, 0)
 }
 
 func (e *Engine) SetDefaultPolicy(chain string, action Action) {
@@ -62,6 +70,8 @@ func (e *Engine) SetDefaultPolicy(chain string, action Action) {
 }
 
 func (e *Engine) Rules() []Rule {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	out := make([]Rule, 0, len(e.rules))
 	out = append(out, e.rules...)
 	return out
@@ -75,8 +85,28 @@ func (e *Engine) DefaultPolicies() map[string]Action {
 	return out
 }
 
+type RuleStat struct {
+	Rule Rule
+	Hits uint64
+}
+
+func (e *Engine) RulesWithStats() []RuleStat {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make([]RuleStat, 0, len(e.rules))
+	for i, rule := range e.rules {
+		out = append(out, RuleStat{
+			Rule: rule,
+			Hits: e.hits[i],
+		})
+	}
+	return out
+}
+
 func (e *Engine) Evaluate(chain string, pkt network.Packet) Action {
-	for _, rule := range e.rules {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for i, rule := range e.rules {
 		if rule.Chain != "" && !strings.EqualFold(rule.Chain, chain) {
 			continue
 		}
@@ -101,6 +131,7 @@ func (e *Engine) Evaluate(chain string, pkt network.Packet) Action {
 		if rule.OutInterface != "" && rule.OutInterface != pkt.EgressInterface {
 			continue
 		}
+		e.hits[i]++
 		return rule.Action
 	}
 	if e.defaultPolicies != nil {
