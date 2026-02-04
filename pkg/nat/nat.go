@@ -65,30 +65,14 @@ func (t *Table) Apply(pkt network.Packet) network.Packet {
 		if !matchRule(rule, pkt) {
 			continue
 		}
-		val := ConnValue{}
-		switch rule.Type {
-		case TypeSNAT:
-			val.Target = "src"
-			if rule.ToIP != nil {
-				val.TranslatedIP = rule.ToIP.String()
-			}
-			if rule.ToPort != 0 {
-				val.TranslatedPort = rule.ToPort
-			}
-		case TypeDNAT:
-			val.Target = "dst"
-			if rule.ToIP != nil {
-				val.TranslatedIP = rule.ToIP.String()
-			}
-			if rule.ToPort != 0 {
-				val.TranslatedPort = rule.ToPort
-			}
+		translated, forwardVal, reverseKey, reverseVal := applyRule(rule, pkt)
+		if forwardVal.Target != "" {
+			t.conns[key] = forwardVal
 		}
-
-		if val.Target != "" {
-			t.conns[key] = val
-			applyTranslation(&pkt, val)
+		if reverseVal.Target != "" {
+			t.conns[reverseKey] = reverseVal
 		}
+		pkt = translated
 		return pkt
 	}
 	return pkt
@@ -145,4 +129,71 @@ func applyTranslation(pkt *network.Packet, val ConnValue) {
 			pkt.Metadata.DstPort = val.TranslatedPort
 		}
 	}
+}
+
+func applyRule(rule Rule, pkt network.Packet) (network.Packet, ConnValue, ConnKey, ConnValue) {
+	translated := pkt
+	forward := ConnValue{}
+	reverseKey := ConnKey{}
+	reverse := ConnValue{}
+
+	switch rule.Type {
+	case TypeSNAT:
+		originalSrcIP := pkt.Metadata.SrcIP
+		originalSrcPort := pkt.Metadata.SrcPort
+
+		if rule.ToIP != nil {
+			translated.Metadata.SrcIP = rule.ToIP
+			forward.TranslatedIP = rule.ToIP.String()
+		}
+		if rule.ToPort != 0 {
+			translated.Metadata.SrcPort = rule.ToPort
+			forward.TranslatedPort = rule.ToPort
+		}
+		forward.Target = "src"
+
+		reverseKey = ConnKey{
+			SrcIP:   pkt.Metadata.DstIP.String(),
+			DstIP:   translated.Metadata.SrcIP.String(),
+			SrcPort: pkt.Metadata.DstPort,
+			DstPort: translated.Metadata.SrcPort,
+			Proto:   pkt.Metadata.Protocol,
+		}
+		reverse = ConnValue{
+			Target:         "dst",
+			TranslatedIP:   originalSrcIP.String(),
+			TranslatedPort: originalSrcPort,
+		}
+	case TypeDNAT:
+		originalDstIP := pkt.Metadata.DstIP
+		originalDstPort := pkt.Metadata.DstPort
+
+		if rule.ToIP != nil {
+			translated.Metadata.DstIP = rule.ToIP
+			forward.TranslatedIP = rule.ToIP.String()
+		}
+		if rule.ToPort != 0 {
+			translated.Metadata.DstPort = rule.ToPort
+			forward.TranslatedPort = rule.ToPort
+		}
+		forward.Target = "dst"
+
+		reverseKey = ConnKey{
+			SrcIP:   translated.Metadata.DstIP.String(),
+			DstIP:   pkt.Metadata.SrcIP.String(),
+			SrcPort: translated.Metadata.DstPort,
+			DstPort: pkt.Metadata.SrcPort,
+			Proto:   pkt.Metadata.Protocol,
+		}
+		reverse = ConnValue{
+			Target:         "src",
+			TranslatedIP:   originalDstIP.String(),
+			TranslatedPort: originalDstPort,
+		}
+	}
+
+	if forward.Target != "" {
+		applyTranslation(&translated, forward)
+	}
+	return translated, forward, reverseKey, reverse
 }
