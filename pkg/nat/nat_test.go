@@ -246,3 +246,34 @@ func TestConnectionTrackingReverseDNAT(t *testing.T) {
 		t.Fatalf("expected reverse dnat src port, got %d", out.Metadata.SrcPort)
 	}
 }
+
+func TestRuleHits(t *testing.T) {
+	_, srcNet, _ := net.ParseCIDR("10.0.0.0/8")
+	table := NewTable([]Rule{
+		{
+			Type:   TypeSNAT,
+			SrcNet: srcNet,
+			ToIP:   net.ParseIP("203.0.113.10"),
+		},
+	})
+
+	pkt := network.Packet{
+		Metadata: network.PacketMetadata{
+			Protocol: "TCP",
+			SrcIP:    net.ParseIP("10.1.2.3"),
+			DstIP:    net.ParseIP("1.1.1.1"),
+			SrcPort:  1234,
+			DstPort:  80,
+		},
+	}
+	table.Apply(pkt)
+	table.Apply(pkt)
+
+	stats := table.RulesWithStats()
+	if len(stats) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(stats))
+	}
+	if stats[0].Hits != 2 {
+		t.Fatalf("expected 2 hits, got %d", stats[0].Hits)
+	}
+}
