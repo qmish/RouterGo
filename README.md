@@ -38,7 +38,10 @@ go build -o router cmd/router/main.go
 - `POST /api/nat` — добавление правила NAT
 - `GET /api/qos` — список классов QoS
 - `POST /api/qos` — добавление класса QoS
-- `GET /api/stats` — базовая статистика (rx/tx/пакеты/байты/ошибки/дропы/причины/классы QoS)
+- `POST /api/config/apply` — применить конфигурацию (self-heal)
+- `POST /api/config/rollback` — откат к последнему снапшоту
+- `GET /api/config/snapshots` — список снапшотов
+- `GET /api/stats` — базовая статистика (rx/tx/пакеты/байты/ошибки/дропы/причины/классы QoS/конфиг)
 
 ## Примечания
 

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -14,6 +15,7 @@ type Config struct {
 	NAT        []NATRuleConfig      `mapstructure:"nat"`
 	QoS        []QoSClassConfig     `mapstructure:"qos"`
 	IDS        IDSConfig            `mapstructure:"ids"`
+	SelfHeal   SelfHealConfig       `mapstructure:"selfheal"`
 	API        APIConfig            `mapstructure:"api"`
 	Metrics    MetricsConfig        `mapstructure:"metrics"`
 	Logging    LoggingConfig        `mapstructure:"logging"`
@@ -79,6 +81,13 @@ type IDSConfig struct {
 	AlertLimit        int    `mapstructure:"alert_limit"`
 }
 
+type SelfHealConfig struct {
+	Enabled        bool   `mapstructure:"enabled"`
+	PingGateway    string `mapstructure:"ping_gateway"`
+	HTTPCheckURL   string `mapstructure:"http_check_url"`
+	TimeoutSeconds int    `mapstructure:"timeout_seconds"`
+}
+
 type APIConfig struct {
 	Address string `mapstructure:"address"`
 }
@@ -97,6 +106,26 @@ func Load(path string) (*Config, error) {
 	v.SetConfigFile(path)
 
 	if err := v.ReadInConfig(); err != nil {
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
+
+	applyDefaults(&cfg)
+	if err := validate(&cfg); err != nil {
+		return nil, err
+	}
+
+	return &cfg, nil
+}
+
+func LoadFromBytes(data []byte) (*Config, error) {
+	v := viper.New()
+	v.SetConfigType("yaml")
+	if err := v.ReadConfig(strings.NewReader(string(data))); err != nil {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
@@ -140,6 +169,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.IDS.AlertLimit == 0 {
 		cfg.IDS.AlertLimit = 1000
+	}
+	if cfg.SelfHeal.TimeoutSeconds == 0 {
+		cfg.SelfHeal.TimeoutSeconds = 3
 	}
 }
 

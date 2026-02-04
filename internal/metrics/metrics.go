@@ -24,6 +24,9 @@ type Metrics struct {
 	TxPacketsTotal  prometheus.Counter
 	IDSAlertsTotal  prometheus.Counter
 	IDSDropsTotal   prometheus.Counter
+	ConfigApplyTotal        prometheus.Counter
+	ConfigRollbackTotal     prometheus.Counter
+	ConfigApplyFailedTotal  prometheus.Counter
 	packetsCount    atomic.Uint64
 	bytesCount      atomic.Uint64
 	errorsCount     atomic.Uint64
@@ -32,6 +35,9 @@ type Metrics struct {
 	txPacketsCount  atomic.Uint64
 	idsAlertsCount  atomic.Uint64
 	idsDropsCount   atomic.Uint64
+	configApplyCount       atomic.Uint64
+	configRollbackCount    atomic.Uint64
+	configApplyFailedCount atomic.Uint64
 	mu              sync.Mutex
 	dropsByReason   map[string]uint64
 	qosDropsByClass map[string]uint64
@@ -83,6 +89,18 @@ func NewWithRegistry(reg prometheus.Registerer) *Metrics {
 			Name: "router_ids_drops_total",
 			Help: "Total number of IDS drops",
 		}),
+		ConfigApplyTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "router_config_apply_total",
+			Help: "Total number of config apply operations",
+		}),
+		ConfigRollbackTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "router_config_rollback_total",
+			Help: "Total number of config rollbacks",
+		}),
+		ConfigApplyFailedTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "router_config_apply_failed_total",
+			Help: "Total number of failed config applies",
+		}),
 		dropsByReason:   map[string]uint64{},
 		qosDropsByClass: map[string]uint64{},
 	}
@@ -100,6 +118,9 @@ func NewWithRegistry(reg prometheus.Registerer) *Metrics {
 		m.TxPacketsTotal,
 		m.IDSAlertsTotal,
 		m.IDSDropsTotal,
+		m.ConfigApplyTotal,
+		m.ConfigRollbackTotal,
+		m.ConfigApplyFailedTotal,
 	)
 	return m
 }
@@ -169,6 +190,21 @@ func (m *Metrics) IncIDSDrop() {
 	m.IDSDropsTotal.Inc()
 }
 
+func (m *Metrics) IncConfigApply() {
+	m.configApplyCount.Add(1)
+	m.ConfigApplyTotal.Inc()
+}
+
+func (m *Metrics) IncConfigRollback() {
+	m.configRollbackCount.Add(1)
+	m.ConfigRollbackTotal.Inc()
+}
+
+func (m *Metrics) IncConfigApplyFailed() {
+	m.configApplyFailedCount.Add(1)
+	m.ConfigApplyFailedTotal.Inc()
+}
+
 type Snapshot struct {
 	Packets         uint64
 	Bytes           uint64
@@ -180,6 +216,9 @@ type Snapshot struct {
 	TxPackets       uint64
 	IDSAlerts       uint64
 	IDSDrops        uint64
+	ConfigApply     uint64
+	ConfigRollback  uint64
+	ConfigApplyFailed uint64
 }
 
 func (m *Metrics) Snapshot() Snapshot {
@@ -204,6 +243,9 @@ func (m *Metrics) Snapshot() Snapshot {
 		TxPackets:       m.txPacketsCount.Load(),
 		IDSAlerts:       m.idsAlertsCount.Load(),
 		IDSDrops:        m.idsDropsCount.Load(),
+		ConfigApply:     m.configApplyCount.Load(),
+		ConfigRollback:  m.configRollbackCount.Load(),
+		ConfigApplyFailed: m.configApplyFailedCount.Load(),
 	}
 }
 

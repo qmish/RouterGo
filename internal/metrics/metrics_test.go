@@ -18,6 +18,9 @@ func TestMetricsSnapshot(t *testing.T) {
 	m.IncTxPackets()
 	m.IncIDSAlert()
 	m.IncIDSDrop()
+	m.IncConfigApply()
+	m.IncConfigRollback()
+	m.IncConfigApplyFailed()
 
 	s := m.Snapshot()
 	if s.Packets != 1 {
@@ -52,5 +55,14 @@ func TestMetricsSnapshot(t *testing.T) {
 	}
 	if s.IDSDrops != 1 {
 		t.Fatalf("expected ids drops 1, got %d", s.IDSDrops)
+	}
+	if s.ConfigApply != 1 {
+		t.Fatalf("expected config apply 1, got %d", s.ConfigApply)
+	}
+	if s.ConfigRollback != 1 {
+		t.Fatalf("expected config rollback 1, got %d", s.ConfigRollback)
+	}
+	if s.ConfigApplyFailed != 1 {
+		t.Fatalf("expected config apply failed 1, got %d", s.ConfigApplyFailed)
 	}
 }

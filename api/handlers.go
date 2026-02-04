@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"router-go/internal/config"
 	"router-go/internal/metrics"
 	"router-go/pkg/firewall"
 	"router-go/pkg/ids"
@@ -21,6 +22,7 @@ type Handlers struct {
 	IDS      *ids.Engine
 	NAT      *nat.Table
 	QoS      *qos.QueueManager
+	ConfigMgr *config.Manager
 	Metrics  *metrics.Metrics
 }
 
@@ -106,6 +108,9 @@ func (h *Handlers) GetStats(c *gin.Context) {
 		"tx_packets_total":   snapshot.TxPackets,
 		"ids_alerts_total":   snapshot.IDSAlerts,
 		"ids_drops_total":    snapshot.IDSDrops,
+		"config_apply_total": snapshot.ConfigApply,
+		"config_rollback_total": snapshot.ConfigRollback,
+		"config_apply_failed_total": snapshot.ConfigApplyFailed,
 		"bytes_total":        snapshot.Bytes,
 		"errors_total":       snapshot.Errors,
 		"drops_total":        snapshot.Drops,
@@ -307,6 +312,61 @@ func (h *Handlers) ResetIDS(c *gin.Context) {
 	}
 	h.IDS.Reset()
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *Handlers) ApplyConfig(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	var req struct {
+		ConfigYAML string `json:"config_yaml"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	if req.ConfigYAML == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "config_yaml is required"})
+		return
+	}
+
+	newCfg, err := config.LoadFromBytes([]byte(req.ConfigYAML))
+	if err != nil {
+		h.Metrics.IncConfigApplyFailed()
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid config"})
+		return
+	}
+
+	if err := h.ConfigMgr.Apply(newCfg); err != nil {
+		h.Metrics.IncConfigApplyFailed()
+		h.Metrics.IncConfigRollback()
+		c.JSON(http.StatusBadRequest, gin.H{"error": "health check failed"})
+		return
+	}
+	h.Metrics.IncConfigApply()
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *Handlers) RollbackConfig(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	if err := h.ConfigMgr.RollbackLast(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no snapshots"})
+		return
+	}
+	h.Metrics.IncConfigRollback()
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *Handlers) GetConfigSnapshots(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	c.JSON(http.StatusOK, h.ConfigMgr.Snapshots())
 }
 
 func (h *Handlers) GetNAT(c *gin.Context) {
