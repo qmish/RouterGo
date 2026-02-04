@@ -12,6 +12,7 @@ import (
 	"router-go/pkg/flow"
 	"router-go/pkg/ids"
 	"router-go/pkg/nat"
+	"router-go/pkg/p2p"
 	"router-go/pkg/qos"
 	"router-go/pkg/routing"
 
@@ -25,6 +26,7 @@ type Handlers struct {
 	NAT      *nat.Table
 	QoS      *qos.QueueManager
 	Flow     *flow.Engine
+	P2P      *p2p.Engine
 	ConfigMgr *config.Manager
 	Metrics  *metrics.Metrics
 }
@@ -114,6 +116,8 @@ func (h *Handlers) GetStats(c *gin.Context) {
 		"config_apply_total": snapshot.ConfigApply,
 		"config_rollback_total": snapshot.ConfigRollback,
 		"config_apply_failed_total": snapshot.ConfigApplyFailed,
+		"p2p_peers_total": snapshot.P2PPeers,
+		"p2p_routes_synced_total": snapshot.P2PRoutesSynced,
 		"bytes_total":        snapshot.Bytes,
 		"errors_total":       snapshot.Errors,
 		"drops_total":        snapshot.Drops,
@@ -400,6 +404,31 @@ func (h *Handlers) GetDashboardAlerts(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, h.IDS.Alerts())
+}
+
+func (h *Handlers) GetP2PPeers(c *gin.Context) {
+	if h.P2P == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "p2p disabled"})
+		return
+	}
+	c.JSON(http.StatusOK, h.P2P.Peers())
+}
+
+func (h *Handlers) GetP2PRoutes(c *gin.Context) {
+	if h.P2P == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "p2p disabled"})
+		return
+	}
+	c.JSON(http.StatusOK, h.P2P.Routes())
+}
+
+func (h *Handlers) ResetP2P(c *gin.Context) {
+	if h.P2P == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "p2p disabled"})
+		return
+	}
+	h.P2P.Reset()
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 func (h *Handlers) GetNAT(c *gin.Context) {

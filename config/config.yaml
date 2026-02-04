@@ -51,6 +51,14 @@ dashboard:
   enabled: true
   static_dir: web
 
+p2p:
+  enabled: false
+  peer_id: node-1
+  discovery: true
+  listen_addr: :5355
+  multicast_addr: 224.0.0.251:5355
+  sync_interval: 10
+
 api:
   address: :8080
 
