@@ -408,7 +408,19 @@ func (h *Handlers) GetDashboardAlerts(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ids disabled"})
 		return
 	}
-	c.JSON(http.StatusOK, h.IDS.Alerts())
+	alertType := strings.TrimSpace(c.Query("type"))
+	alerts := h.IDS.Alerts()
+	if alertType == "" {
+		c.JSON(http.StatusOK, alerts)
+		return
+	}
+	filtered := make([]ids.Alert, 0, len(alerts))
+	for _, alert := range alerts {
+		if strings.EqualFold(alert.Type, alertType) {
+			filtered = append(filtered, alert)
+		}
+	}
+	c.JSON(http.StatusOK, filtered)
 }
 
 func (h *Handlers) GetP2PPeers(c *gin.Context) {
