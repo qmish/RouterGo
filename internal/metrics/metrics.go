@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync/atomic"
 
 	"router-go/internal/config"
 
@@ -15,6 +16,9 @@ type Metrics struct {
 	PacketsTotal prometheus.Counter
 	BytesTotal   prometheus.Counter
 	ErrorsTotal  prometheus.Counter
+	packetsCount atomic.Uint64
+	bytesCount   atomic.Uint64
+	errorsCount  atomic.Uint64
 }
 
 func New() *Metrics {
@@ -34,6 +38,38 @@ func New() *Metrics {
 	}
 	prometheus.MustRegister(m.PacketsTotal, m.BytesTotal, m.ErrorsTotal)
 	return m
+}
+
+func (m *Metrics) IncPackets() {
+	m.packetsCount.Add(1)
+	m.PacketsTotal.Inc()
+}
+
+func (m *Metrics) AddBytes(n int) {
+	if n < 0 {
+		return
+	}
+	m.bytesCount.Add(uint64(n))
+	m.BytesTotal.Add(float64(n))
+}
+
+func (m *Metrics) IncErrors() {
+	m.errorsCount.Add(1)
+	m.ErrorsTotal.Inc()
+}
+
+type Snapshot struct {
+	Packets uint64
+	Bytes   uint64
+	Errors  uint64
+}
+
+func (m *Metrics) Snapshot() Snapshot {
+	return Snapshot{
+		Packets: m.packetsCount.Load(),
+		Bytes:   m.bytesCount.Load(),
+		Errors:  m.errorsCount.Load(),
+	}
 }
 
 func StartServer(ctx context.Context, cfg config.MetricsConfig) error {

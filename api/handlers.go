@@ -90,8 +90,12 @@ func (h *Handlers) AddFirewallRule(c *gin.Context) {
 }
 
 func (h *Handlers) GetStats(c *gin.Context) {
+	snapshot := h.Metrics.Snapshot()
 	c.JSON(http.StatusOK, gin.H{
-		"status":       "ok",
-		"routes_count": len(h.Routes.Routes()),
+		"status":        "ok",
+		"routes_count":  len(h.Routes.Routes()),
+		"packets_total": snapshot.Packets,
+		"bytes_total":   snapshot.Bytes,
+		"errors_total":  snapshot.Errors,
 	})
 }

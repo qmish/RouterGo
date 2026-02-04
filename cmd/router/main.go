@@ -102,19 +102,19 @@ func startPacketLoop(
 
 			pkt, err := io.ReadPacket(ctx)
 			if err != nil {
-				metricsSrv.ErrorsTotal.Inc()
+				metricsSrv.IncErrors()
 				continue
 			}
 
 			meta, err := network.ParseIPv4Metadata(pkt.Data)
 			if err != nil {
-				metricsSrv.ErrorsTotal.Inc()
+				metricsSrv.IncErrors()
 				continue
 			}
 			pkt.Metadata = meta
 
-			metricsSrv.PacketsTotal.Inc()
-			metricsSrv.BytesTotal.Add(float64(len(pkt.Data)))
+			metricsSrv.IncPackets()
+			metricsSrv.AddBytes(len(pkt.Data))
 			processPacket(pkt, routes, firewallEngine, natTable, qosQueue)
 		}
 	}()
