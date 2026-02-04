@@ -31,6 +31,7 @@ qos:
     rate_limit_kbps: 512
     priority: 10
     max_queue: 100
+    drop_policy: tail
 
 api:
   address: :8080

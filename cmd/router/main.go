@@ -146,8 +146,11 @@ func processPacket(
 	if qosQueue == nil {
 		return
 	}
-	if ok := qosQueue.Enqueue(pkt); !ok {
+	ok, dropped := qosQueue.Enqueue(pkt)
+	if dropped {
 		metricsSrv.IncDropReason("qos")
+	}
+	if !ok {
 		return
 	}
 }
@@ -287,6 +290,7 @@ func buildQoSQueue(cfg *config.Config) *qos.QueueManager {
 			RateLimitKbps: qc.RateLimitKbps,
 			Priority:      qc.Priority,
 			MaxQueue:      qc.MaxQueue,
+			DropPolicy:    qc.DropPolicy,
 		})
 	}
 	return qos.NewQueueManager(classes)

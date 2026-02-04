@@ -115,12 +115,35 @@ func TestQueueMaxSizeDrop(t *testing.T) {
 		{Name: "limited", Protocol: "UDP", Priority: 5, MaxQueue: 1},
 	})
 
-	ok := q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "UDP"}})
-	if !ok {
+	ok, dropped := q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "UDP"}})
+	if !ok || dropped {
 		t.Fatalf("expected first enqueue ok")
 	}
-	ok = q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "UDP"}})
-	if ok {
+	ok, dropped = q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "UDP"}})
+	if ok || !dropped {
 		t.Fatalf("expected enqueue drop due to max_queue")
+	}
+}
+
+func TestQueueHeadDrop(t *testing.T) {
+	q := NewQueueManager([]Class{
+		{Name: "limited", Protocol: "UDP", Priority: 5, MaxQueue: 1, DropPolicy: "head"},
+	})
+
+	ok, dropped := q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "UDP", SrcPort: 1000}})
+	if !ok || dropped {
+		t.Fatalf("expected first enqueue ok")
+	}
+	ok, dropped = q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "UDP", SrcPort: 2000}})
+	if !ok || !dropped {
+		t.Fatalf("expected enqueue with head drop")
+	}
+
+	pkt, ok := q.Dequeue()
+	if !ok {
+		t.Fatalf("expected packet")
+	}
+	if pkt.Metadata.SrcPort != 2000 {
+		t.Fatalf("expected newest packet after head drop")
 	}
 }
