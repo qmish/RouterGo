@@ -33,6 +33,7 @@ type Engine struct {
 	defaultPolicies map[string]Action
 	hits            []uint64
 	mu              sync.Mutex
+	chainHits       map[string]uint64
 }
 
 func NewEngine(rules []Rule) *Engine {
@@ -40,6 +41,7 @@ func NewEngine(rules []Rule) *Engine {
 		rules:           rules,
 		defaultPolicies: map[string]Action{},
 		hits:            make([]uint64, len(rules)),
+		chainHits:       map[string]uint64{},
 	}
 }
 
@@ -52,6 +54,7 @@ func NewEngineWithDefaults(rules []Rule, defaults map[string]Action) *Engine {
 		rules:           rules,
 		defaultPolicies: policies,
 		hits:            make([]uint64, len(rules)),
+		chainHits:       map[string]uint64{},
 	}
 }
 
@@ -103,9 +106,22 @@ func (e *Engine) RulesWithStats() []RuleStat {
 	return out
 }
 
+func (e *Engine) ChainHits() map[string]uint64 {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make(map[string]uint64, len(e.chainHits))
+	for k, v := range e.chainHits {
+		out[k] = v
+	}
+	return out
+}
+
 func (e *Engine) Evaluate(chain string, pkt network.Packet) Action {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if chain != "" {
+		e.chainHits[strings.ToUpper(chain)]++
+	}
 	for i, rule := range e.rules {
 		if rule.Chain != "" && !strings.EqualFold(rule.Chain, chain) {
 			continue

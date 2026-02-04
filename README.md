@@ -26,6 +26,7 @@ go build -o router cmd/router/main.go
 - `POST /api/firewall` — добавление правила
 - `GET /api/firewall` — список правил firewall (с количеством срабатываний)
 - `GET /api/firewall/defaults` — политики по умолчанию
+- `GET /api/firewall/stats` — статистика по цепочкам
 - `POST /api/firewall/defaults` — обновление политики по умолчанию
 - `GET /api/nat` — список правил NAT (с количеством срабатываний)
 - `POST /api/nat` — добавление правила NAT

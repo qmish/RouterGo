@@ -7,6 +7,7 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	router.POST("/api/firewall", handlers.AddFirewallRule)
 	router.GET("/api/firewall", handlers.GetFirewallRules)
 	router.GET("/api/firewall/defaults", handlers.GetFirewallDefaults)
+	router.GET("/api/firewall/stats", handlers.GetFirewallStats)
 	router.POST("/api/firewall/defaults", handlers.SetFirewallDefault)
 	router.GET("/api/stats", handlers.GetStats)
 	router.GET("/api/nat", handlers.GetNAT)
