@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"router-go/api"
@@ -193,9 +194,9 @@ func buildFirewall(cfg *config.Config, log *logger.Logger) *firewall.Engine {
 		})
 	}
 	defaults := map[string]firewall.Action{
-		"INPUT":   firewall.ActionDrop,
-		"OUTPUT":  firewall.ActionDrop,
-		"FORWARD": firewall.ActionDrop,
+		"INPUT":   parseFirewallAction(cfg.FirewallDefaults.Input, firewall.ActionDrop),
+		"OUTPUT":  parseFirewallAction(cfg.FirewallDefaults.Output, firewall.ActionDrop),
+		"FORWARD": parseFirewallAction(cfg.FirewallDefaults.Forward, firewall.ActionDrop),
 	}
 	return firewall.NewEngineWithDefaults(rules, defaults)
 }
@@ -249,4 +250,17 @@ func buildQoSQueue(cfg *config.Config) *qos.QueueManager {
 		})
 	}
 	return qos.NewQueueManager(classes)
+}
+
+func parseFirewallAction(value string, fallback firewall.Action) firewall.Action {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case string(firewall.ActionAccept):
+		return firewall.ActionAccept
+	case string(firewall.ActionDrop):
+		return firewall.ActionDrop
+	case string(firewall.ActionReject):
+		return firewall.ActionReject
+	default:
+		return fallback
+	}
 }
