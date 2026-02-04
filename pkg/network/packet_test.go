@@ -213,3 +213,56 @@ func TestParseIPv6MetadataUDPPorts(t *testing.T) {
 		t.Fatalf("unexpected ports: %d -> %d", meta.SrcPort, meta.DstPort)
 	}
 }
+
+func TestParseIPv4MetadataICMPTypeCode(t *testing.T) {
+	ipHeader := []byte{
+		0x45, 0x00, 0x00, 0x1c,
+		0x00, 0x00, 0x40, 0x00,
+		0x40, 0x01, 0x00, 0x00,
+		0x0a, 0x00, 0x00, 0x01,
+		0x0a, 0x00, 0x00, 0x02,
+	}
+	icmpHeader := []byte{
+		0x08, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+	}
+	data := append(ipHeader, icmpHeader...)
+
+	meta, err := ParseIPMetadata(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if meta.Protocol != "ICMP" {
+		t.Fatalf("expected ICMP, got %s", meta.Protocol)
+	}
+	if meta.ICMPType != 8 || meta.ICMPCode != 0 {
+		t.Fatalf("unexpected icmp type/code: %d/%d", meta.ICMPType, meta.ICMPCode)
+	}
+}
+
+func TestParseIPv6MetadataICMPv6TypeCode(t *testing.T) {
+	ipv6Header := []byte{
+		0x60, 0x00, 0x00, 0x00,
+		0x00, 0x08, 0x3a, 0x40,
+		0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+		0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
+	}
+	icmpv6Header := []byte{
+		0x80, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+	}
+	data := append(ipv6Header, icmpv6Header...)
+
+	meta, err := ParseIPMetadata(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if meta.Protocol != "ICMPv6" {
+		t.Fatalf("expected ICMPv6, got %s", meta.Protocol)
+	}
+	if meta.ICMPType != 128 || meta.ICMPCode != 0 {
+		t.Fatalf("unexpected icmpv6 type/code: %d/%d", meta.ICMPType, meta.ICMPCode)
+	}
+}

@@ -22,6 +22,8 @@ type PacketMetadata struct {
 	SrcPort  int
 	DstPort  int
 	Length   int
+	ICMPType int
+	ICMPCode int
 }
 
 type IPv4Header struct {
@@ -120,6 +122,12 @@ func ParseIPv4Metadata(data []byte) (PacketMetadata, error) {
 		}
 		meta.SrcPort = int(binary.BigEndian.Uint16(data[h.IHL : h.IHL+2]))
 		meta.DstPort = int(binary.BigEndian.Uint16(data[h.IHL+2 : h.IHL+4]))
+	} else if meta.Protocol == "ICMP" {
+		if len(data) < h.IHL+2 {
+			return PacketMetadata{}, ErrPacketTooShort
+		}
+		meta.ICMPType = int(data[h.IHL])
+		meta.ICMPCode = int(data[h.IHL+1])
 	}
 
 	return meta, nil
@@ -154,6 +162,12 @@ func ParseIPv6Metadata(data []byte) (PacketMetadata, error) {
 		}
 		meta.SrcPort = int(binary.BigEndian.Uint16(data[40:42]))
 		meta.DstPort = int(binary.BigEndian.Uint16(data[42:44]))
+	} else if meta.Protocol == "ICMPv6" {
+		if len(data) < 40+2 {
+			return PacketMetadata{}, ErrPacketTooShort
+		}
+		meta.ICMPType = int(data[40])
+		meta.ICMPCode = int(data[41])
 	}
 
 	return meta, nil
