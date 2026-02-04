@@ -7,6 +7,7 @@ import (
 
 	"router-go/internal/metrics"
 	"router-go/pkg/firewall"
+	"router-go/pkg/ids"
 	"router-go/pkg/nat"
 	"router-go/pkg/qos"
 	"router-go/pkg/routing"
@@ -17,6 +18,7 @@ import (
 type Handlers struct {
 	Routes   *routing.Table
 	Firewall *firewall.Engine
+	IDS      *ids.Engine
 	NAT      *nat.Table
 	QoS      *qos.QueueManager
 	Metrics  *metrics.Metrics
@@ -102,6 +104,8 @@ func (h *Handlers) GetStats(c *gin.Context) {
 		"packets_total":      snapshot.Packets,
 		"rx_packets_total":   snapshot.RxPackets,
 		"tx_packets_total":   snapshot.TxPackets,
+		"ids_alerts_total":   snapshot.IDSAlerts,
+		"ids_drops_total":    snapshot.IDSDrops,
 		"bytes_total":        snapshot.Bytes,
 		"errors_total":       snapshot.Errors,
 		"drops_total":        snapshot.Drops,
@@ -192,6 +196,116 @@ func (h *Handlers) SetFirewallDefault(c *gin.Context) {
 	}
 
 	h.Firewall.SetDefaultPolicy(chain, firewall.Action(action))
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *Handlers) GetIDSRules(c *gin.Context) {
+	if h.IDS == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ids disabled"})
+		return
+	}
+	type ruleView struct {
+		Name            string `json:"name"`
+		Action          string `json:"action"`
+		Protocol        string `json:"protocol,omitempty"`
+		SrcCIDR         string `json:"src_cidr,omitempty"`
+		DstCIDR         string `json:"dst_cidr,omitempty"`
+		SrcPort         int    `json:"src_port,omitempty"`
+		DstPort         int    `json:"dst_port,omitempty"`
+		PayloadContains string `json:"payload_contains,omitempty"`
+	}
+	rules := h.IDS.Rules()
+	out := make([]ruleView, 0, len(rules))
+	for _, r := range rules {
+		view := ruleView{
+			Name:            r.Name,
+			Action:          string(r.Action),
+			Protocol:        r.Protocol,
+			SrcPort:         r.SrcPort,
+			DstPort:         r.DstPort,
+			PayloadContains: r.PayloadContains,
+		}
+		if r.SrcNet != nil {
+			view.SrcCIDR = r.SrcNet.String()
+		}
+		if r.DstNet != nil {
+			view.DstCIDR = r.DstNet.String()
+		}
+		out = append(out, view)
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *Handlers) AddIDSRule(c *gin.Context) {
+	if h.IDS == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ids disabled"})
+		return
+	}
+	var req struct {
+		Name            string `json:"name"`
+		Action          string `json:"action"`
+		Protocol        string `json:"protocol"`
+		SrcCIDR         string `json:"src_cidr"`
+		DstCIDR         string `json:"dst_cidr"`
+		SrcPort         int    `json:"src_port"`
+		DstPort         int    `json:"dst_port"`
+		PayloadContains string `json:"payload_contains"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+	var srcNet *net.IPNet
+	if req.SrcCIDR != "" {
+		_, parsed, err := net.ParseCIDR(req.SrcCIDR)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid src_cidr"})
+			return
+		}
+		srcNet = parsed
+	}
+	var dstNet *net.IPNet
+	if req.DstCIDR != "" {
+		_, parsed, err := net.ParseCIDR(req.DstCIDR)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid dst_cidr"})
+			return
+		}
+		dstNet = parsed
+	}
+
+	rule := ids.Rule{
+		Name:            req.Name,
+		Action:          ids.Action(strings.ToUpper(req.Action)),
+		Protocol:        req.Protocol,
+		SrcNet:          srcNet,
+		DstNet:          dstNet,
+		SrcPort:         req.SrcPort,
+		DstPort:         req.DstPort,
+		PayloadContains: req.PayloadContains,
+	}
+	h.IDS.AddRule(rule)
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *Handlers) GetIDSAlerts(c *gin.Context) {
+	if h.IDS == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ids disabled"})
+		return
+	}
+	c.JSON(http.StatusOK, h.IDS.Alerts())
+}
+
+func (h *Handlers) ResetIDS(c *gin.Context) {
+	if h.IDS == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ids disabled"})
+		return
+	}
+	h.IDS.Reset()
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 

@@ -16,6 +16,7 @@ import (
 	"router-go/internal/metrics"
 	"router-go/internal/platform"
 	"router-go/pkg/firewall"
+	"router-go/pkg/ids"
 	"router-go/pkg/nat"
 	"router-go/pkg/network"
 	"router-go/pkg/qos"
@@ -48,6 +49,7 @@ func main() {
 
 	routeTable := buildRoutes(cfg, log)
 	firewallEngine := buildFirewall(cfg, log)
+	idsEngine := buildIDS(cfg)
 	natTable := buildNAT(cfg, log)
 	qosQueue := buildQoSQueue(cfg)
 
@@ -56,6 +58,7 @@ func main() {
 	handlers := &api.Handlers{
 		Routes:   routeTable,
 		Firewall: firewallEngine,
+		IDS:      idsEngine,
 		NAT:      natTable,
 		QoS:      qosQueue,
 		Metrics:  metricsSrv,
@@ -68,7 +71,7 @@ func main() {
 		}
 	}()
 
-	startPacketLoop(ctx, cfg, log, metricsSrv, routeTable, firewallEngine, natTable, qosQueue)
+	startPacketLoop(ctx, cfg, log, metricsSrv, routeTable, firewallEngine, idsEngine, natTable, qosQueue)
 	<-ctx.Done()
 	log.Info("shutdown", nil)
 }
@@ -80,6 +83,7 @@ func startPacketLoop(
 	metricsSrv *metrics.Metrics,
 	routes *routing.Table,
 	firewallEngine *firewall.Engine,
+	idsEngine *ids.Engine,
 	natTable *nat.Table,
 	qosQueue *qos.QueueManager,
 ) {
@@ -123,7 +127,7 @@ func startPacketLoop(
 
 			metricsSrv.IncPackets()
 			metricsSrv.AddBytes(len(pkt.Data))
-			processPacket(pkt, localIPs, routes, firewallEngine, natTable, qosQueue, metricsSrv)
+			processPacket(pkt, localIPs, routes, firewallEngine, idsEngine, natTable, qosQueue, metricsSrv)
 		}
 	}()
 }
@@ -133,11 +137,23 @@ func processPacket(
 	localIPs []net.IP,
 	routes *routing.Table,
 	firewallEngine *firewall.Engine,
+	idsEngine *ids.Engine,
 	natTable *nat.Table,
 	qosQueue *qos.QueueManager,
 	metricsSrv *metrics.Metrics,
 ) {
 	_, _ = routes.Lookup(pkt.Metadata.DstIP)
+	if idsEngine != nil {
+		res := idsEngine.Detect(pkt)
+		if res.Alert != nil {
+			metricsSrv.IncIDSAlert()
+		}
+		if res.Drop {
+			metricsSrv.IncIDSDrop()
+			metricsSrv.IncDropReason("ids")
+			return
+		}
+	}
 	pkt = natTable.Apply(pkt)
 	chain := determineChain(pkt, localIPs)
 	if firewallEngine.Evaluate(chain, pkt) != firewall.ActionAccept {
@@ -311,6 +327,20 @@ func parseFirewallAction(value string, fallback firewall.Action) firewall.Action
 	default:
 		return fallback
 	}
+}
+
+func buildIDS(cfg *config.Config) *ids.Engine {
+	if !cfg.IDS.Enabled {
+		return nil
+	}
+	action := ids.Action(strings.ToUpper(strings.TrimSpace(cfg.IDS.BehaviorAction)))
+	return ids.NewEngine(ids.Config{
+		Window:            time.Duration(cfg.IDS.WindowSeconds) * time.Second,
+		RateThreshold:     cfg.IDS.RateThreshold,
+		PortScanThreshold: cfg.IDS.PortScanThreshold,
+		BehaviorAction:    action,
+		AlertLimit:        cfg.IDS.AlertLimit,
+	})
 }
 
 func buildLocalIPs(cfg *config.Config) []net.IP {

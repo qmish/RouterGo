@@ -16,6 +16,8 @@ func TestMetricsSnapshot(t *testing.T) {
 	m.IncRxPackets()
 	m.IncTxPackets()
 	m.IncTxPackets()
+	m.IncIDSAlert()
+	m.IncIDSDrop()
 
 	s := m.Snapshot()
 	if s.Packets != 1 {
@@ -44,5 +46,11 @@ func TestMetricsSnapshot(t *testing.T) {
 	}
 	if s.TxPackets != 2 {
 		t.Fatalf("expected tx packets 2, got %d", s.TxPackets)
+	}
+	if s.IDSAlerts != 1 {
+		t.Fatalf("expected ids alerts 1, got %d", s.IDSAlerts)
+	}
+	if s.IDSDrops != 1 {
+		t.Fatalf("expected ids drops 1, got %d", s.IDSDrops)
 	}
 }
