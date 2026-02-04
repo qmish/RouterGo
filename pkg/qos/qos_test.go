@@ -109,3 +109,18 @@ func TestQueueRateLimit(t *testing.T) {
 		t.Fatalf("expected dequeue after refill")
 	}
 }
+
+func TestQueueMaxSizeDrop(t *testing.T) {
+	q := NewQueueManager([]Class{
+		{Name: "limited", Protocol: "UDP", Priority: 5, MaxQueue: 1},
+	})
+
+	ok := q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "UDP"}})
+	if !ok {
+		t.Fatalf("expected first enqueue ok")
+	}
+	ok = q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "UDP"}})
+	if ok {
+		t.Fatalf("expected enqueue drop due to max_queue")
+	}
+}

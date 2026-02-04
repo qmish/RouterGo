@@ -15,6 +15,7 @@ type Class struct {
 	DstPort       int
 	RateLimitKbps int
 	Priority      int
+	MaxQueue      int
 }
 
 type Classifier struct {
@@ -58,11 +59,16 @@ func NewQueueManager(classes []Class) *QueueManager {
 	}
 }
 
-func (q *QueueManager) Enqueue(pkt network.Packet) {
+func (q *QueueManager) Enqueue(pkt network.Packet) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	class := q.classify(pkt)
-	q.queues[class.Name] = append(q.queues[class.Name], pkt)
+	queue := q.queues[class.Name]
+	if class.MaxQueue > 0 && len(queue) >= class.MaxQueue {
+		return false
+	}
+	q.queues[class.Name] = append(queue, pkt)
+	return true
 }
 
 func (q *QueueManager) Dequeue() (network.Packet, bool) {

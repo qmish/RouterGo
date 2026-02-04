@@ -65,6 +65,7 @@ type QoSClassConfig struct {
 	DstPort       int    `mapstructure:"dst_port"`
 	RateLimitKbps int    `mapstructure:"rate_limit_kbps"`
 	Priority      int    `mapstructure:"priority"`
+	MaxQueue      int    `mapstructure:"max_queue"`
 }
 
 type APIConfig struct {

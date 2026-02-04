@@ -270,6 +270,7 @@ func (h *Handlers) AddQoSClass(c *gin.Context) {
 		DstPort       int    `json:"dst_port"`
 		RateLimitKbps int    `json:"rate_limit_kbps"`
 		Priority      int    `json:"priority"`
+		MaxQueue      int    `json:"max_queue"`
 	}
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
@@ -287,6 +288,7 @@ func (h *Handlers) AddQoSClass(c *gin.Context) {
 		DstPort:       req.DstPort,
 		RateLimitKbps: req.RateLimitKbps,
 		Priority:      req.Priority,
+		MaxQueue:      req.MaxQueue,
 	}
 	h.QoS.AddClass(class)
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
