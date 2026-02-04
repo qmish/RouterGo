@@ -85,6 +85,7 @@ func startPacketLoop(
 		return
 	}
 
+	localIPs := buildLocalIPs(cfg)
 	io, err := platform.NewPacketIO(platform.Options{Interface: cfg.Interfaces[0]})
 	if err != nil {
 		log.Warn("packet io unavailable", map[string]any{"err": err.Error()})
@@ -115,13 +116,14 @@ func startPacketLoop(
 
 			metricsSrv.IncPackets()
 			metricsSrv.AddBytes(len(pkt.Data))
-			processPacket(pkt, routes, firewallEngine, natTable, qosQueue)
+			processPacket(pkt, localIPs, routes, firewallEngine, natTable, qosQueue)
 		}
 	}()
 }
 
 func processPacket(
 	pkt network.Packet,
+	localIPs []net.IP,
 	routes *routing.Table,
 	firewallEngine *firewall.Engine,
 	natTable *nat.Table,
@@ -129,7 +131,8 @@ func processPacket(
 ) {
 	_, _ = routes.Lookup(pkt.Metadata.DstIP)
 	pkt = natTable.Apply(pkt)
-	if firewallEngine.Evaluate("FORWARD", pkt) != firewall.ActionAccept {
+	chain := determineChain(pkt, localIPs)
+	if firewallEngine.Evaluate(chain, pkt) != firewall.ActionAccept {
 		return
 	}
 	if qosQueue == nil {
@@ -263,4 +266,35 @@ func parseFirewallAction(value string, fallback firewall.Action) firewall.Action
 	default:
 		return fallback
 	}
+}
+
+func buildLocalIPs(cfg *config.Config) []net.IP {
+	out := make([]net.IP, 0, len(cfg.Interfaces))
+	for _, iface := range cfg.Interfaces {
+		ip, _, err := net.ParseCIDR(iface.IP)
+		if err != nil {
+			continue
+		}
+		out = append(out, ip)
+	}
+	return out
+}
+
+func determineChain(pkt network.Packet, localIPs []net.IP) string {
+	if isLocalIP(pkt.Metadata.DstIP, localIPs) {
+		return "INPUT"
+	}
+	if isLocalIP(pkt.Metadata.SrcIP, localIPs) {
+		return "OUTPUT"
+	}
+	return "FORWARD"
+}
+
+func isLocalIP(ip net.IP, localIPs []net.IP) bool {
+	for _, local := range localIPs {
+		if ip != nil && ip.Equal(local) {
+			return true
+		}
+	}
+	return false
 }
