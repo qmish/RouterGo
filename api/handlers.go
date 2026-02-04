@@ -155,6 +155,12 @@ func (h *Handlers) GetFirewallDefaults(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
+func (h *Handlers) GetFirewallStats(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"chain_hits": h.Firewall.ChainHits(),
+	})
+}
+
 func (h *Handlers) SetFirewallDefault(c *gin.Context) {
 	var req struct {
 		Chain  string `json:"chain"`

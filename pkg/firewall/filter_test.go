@@ -102,3 +102,25 @@ func TestFirewallRuleHits(t *testing.T) {
 		t.Fatalf("expected 2 hits, got %d", stats[0].Hits)
 	}
 }
+
+func TestFirewallChainHits(t *testing.T) {
+	engine := NewEngine([]Rule{
+		{
+			Chain:  "FORWARD",
+			Action: ActionAccept,
+		},
+	})
+
+	pkt := network.Packet{}
+	engine.Evaluate("FORWARD", pkt)
+	engine.Evaluate("INPUT", pkt)
+	engine.Evaluate("INPUT", pkt)
+
+	hits := engine.ChainHits()
+	if hits["FORWARD"] != 1 {
+		t.Fatalf("expected FORWARD hits 1, got %d", hits["FORWARD"])
+	}
+	if hits["INPUT"] != 2 {
+		t.Fatalf("expected INPUT hits 2, got %d", hits["INPUT"])
+	}
+}
