@@ -1,0 +1,37 @@
+interfaces:
+  - name: eth0
+    ip: 192.168.1.1/24
+
+routes:
+  - destination: 0.0.0.0/0
+    gateway: 192.168.1.254
+    interface: eth0
+    metric: 100
+
+firewall:
+  - chain: INPUT
+    action: ACCEPT
+    protocol: TCP
+    dst_port: 22
+
+nat:
+  - type: SNAT
+    src_ip: 192.168.1.0/24
+    to_ip: 203.0.113.10
+
+qos:
+  - name: realtime
+    protocol: UDP
+    dst_port: 5060
+    rate_limit_kbps: 512
+    priority: 10
+
+api:
+  address: :8080
+
+metrics:
+  address: :9090
+  path: /metrics
+
+logging:
+  level: info
