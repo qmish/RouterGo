@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"router-go/internal/metrics"
 	"router-go/pkg/firewall"
 	"router-go/pkg/flow"
+	"router-go/pkg/enrich"
 	"router-go/pkg/ids"
 	"router-go/pkg/nat"
 	"router-go/pkg/p2p"
@@ -30,6 +32,8 @@ type Handlers struct {
 	Flow      *flow.Engine
 	P2P       *p2p.Engine
 	Proxy     *proxy.Proxy
+	Enrich    *enrich.Service
+	EnrichTimeout time.Duration
 	ConfigMgr *config.Manager
 	Metrics   *metrics.Metrics
 }
@@ -620,6 +624,30 @@ func (h *Handlers) ClearProxyCache(c *gin.Context) {
 	}
 	h.Proxy.ClearCache()
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *Handlers) GetEnrichIP(c *gin.Context) {
+	if h.Enrich == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "enrich disabled"})
+		return
+	}
+	ip := strings.TrimSpace(c.Query("ip"))
+	if ip == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ip is required"})
+		return
+	}
+	timeout := h.EnrichTimeout
+	if timeout == 0 {
+		timeout = 3 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
+	defer cancel()
+	result, err := h.Enrich.Lookup(ctx, ip)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "lookup failed"})
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 func (h *Handlers) GetNAT(c *gin.Context) {

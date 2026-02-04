@@ -19,6 +19,7 @@ type Config struct {
 	Dashboard        DashboardConfig        `mapstructure:"dashboard"`
 	P2P              P2PConfig              `mapstructure:"p2p"`
 	Proxy            ProxyConfig            `mapstructure:"proxy"`
+	Integrations     IntegrationsConfig     `mapstructure:"integrations"`
 	API              APIConfig              `mapstructure:"api"`
 	Metrics          MetricsConfig          `mapstructure:"metrics"`
 	Logging          LoggingConfig          `mapstructure:"logging"`
@@ -124,6 +125,44 @@ type ProxyConfig struct {
 	HSTS            bool   `mapstructure:"hsts"`
 	CertFile        string `mapstructure:"cert_file"`
 	KeyFile         string `mapstructure:"key_file"`
+}
+
+type IntegrationsConfig struct {
+	TimeoutSeconds int                 `mapstructure:"timeout_seconds"`
+	GeoIP          GeoIPConfig         `mapstructure:"geoip"`
+	ASN            ASNConfig           `mapstructure:"asn"`
+	ThreatIntel    ThreatIntelConfig   `mapstructure:"threat_intel"`
+	Logs           LogsConfig          `mapstructure:"logs"`
+	Metrics        MetricsExportConfig `mapstructure:"metrics"`
+}
+
+type GeoIPConfig struct {
+	Enabled   bool   `mapstructure:"enabled"`
+	MMDBPath  string `mapstructure:"mmdb_path"`
+	HTTPURL   string `mapstructure:"http_url"`
+	HTTPToken string `mapstructure:"http_token"`
+}
+
+type ASNConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Token   string `mapstructure:"token"`
+}
+
+type ThreatIntelConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	APIKey  string `mapstructure:"api_key"`
+}
+
+type LogsConfig struct {
+	Enabled    bool   `mapstructure:"enabled"`
+	LokiURL    string `mapstructure:"loki_url"`
+	ElasticURL string `mapstructure:"elastic_url"`
+}
+
+type MetricsExportConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`
+	RemoteWriteURL  string `mapstructure:"remote_write_url"`
+	IntervalSeconds int    `mapstructure:"interval_seconds"`
 }
 
 type APIConfig struct {
@@ -240,6 +279,12 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Proxy.CacheTTLSeconds == 0 {
 		cfg.Proxy.CacheTTLSeconds = 60
+	}
+	if cfg.Integrations.TimeoutSeconds == 0 {
+		cfg.Integrations.TimeoutSeconds = 3
+	}
+	if cfg.Integrations.Metrics.IntervalSeconds == 0 {
+		cfg.Integrations.Metrics.IntervalSeconds = 10
 	}
 }
 

@@ -12,6 +12,7 @@ type Logger struct {
 	mu    sync.Mutex
 	out   io.Writer
 	level string
+	hooks []func(map[string]any)
 }
 
 func New(level string) *Logger {
@@ -22,6 +23,15 @@ func New(level string) *Logger {
 		out:   os.Stdout,
 		level: level,
 	}
+}
+
+func (l *Logger) AddHook(hook func(map[string]any)) {
+	if hook == nil {
+		return
+	}
+	l.mu.Lock()
+	l.hooks = append(l.hooks, hook)
+	l.mu.Unlock()
 }
 
 func (l *Logger) Debug(msg string, fields map[string]any) {
@@ -60,8 +70,13 @@ func (l *Logger) log(level string, msg string, fields map[string]any) {
 	}
 
 	l.mu.Lock()
-	defer l.mu.Unlock()
+	hooks := append([]func(map[string]any){}, l.hooks...)
 	_, _ = l.out.Write(append(b, '\n'))
+	l.mu.Unlock()
+	for _, hook := range hooks {
+		entryCopy := entry
+		go hook(entryCopy)
+	}
 }
 
 func shouldLog(level string, current string) bool {
