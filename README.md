@@ -23,7 +23,7 @@ go build -o router cmd/router/main.go
 
 - `GET /api/routes` — список маршрутов
 - `POST /api/firewall` — добавление правила
-- `GET /api/stats` — базовая статистика
+- `GET /api/stats` — базовая статистика (пакеты/байты/ошибки)
 
 ## Примечания
 
