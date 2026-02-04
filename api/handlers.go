@@ -6,6 +6,8 @@ import (
 
 	"router-go/internal/metrics"
 	"router-go/pkg/firewall"
+	"router-go/pkg/nat"
+	"router-go/pkg/qos"
 	"router-go/pkg/routing"
 
 	"github.com/gin-gonic/gin"
@@ -14,6 +16,8 @@ import (
 type Handlers struct {
 	Routes   *routing.Table
 	Firewall *firewall.Engine
+	NAT      *nat.Table
+	QoS      *qos.QueueManager
 	Metrics  *metrics.Metrics
 }
 
@@ -98,4 +102,120 @@ func (h *Handlers) GetStats(c *gin.Context) {
 		"bytes_total":   snapshot.Bytes,
 		"errors_total":  snapshot.Errors,
 	})
+}
+
+func (h *Handlers) GetNAT(c *gin.Context) {
+	type natView struct {
+		Type    string `json:"type"`
+		SrcIP   string `json:"src_ip,omitempty"`
+		DstIP   string `json:"dst_ip,omitempty"`
+		SrcPort int    `json:"src_port,omitempty"`
+		DstPort int    `json:"dst_port,omitempty"`
+		ToIP    string `json:"to_ip,omitempty"`
+		ToPort  int    `json:"to_port,omitempty"`
+	}
+	rules := h.NAT.Rules()
+	out := make([]natView, 0, len(rules))
+	for _, r := range rules {
+		view := natView{
+			Type:    string(r.Type),
+			SrcPort: r.SrcPort,
+			DstPort: r.DstPort,
+			ToPort:  r.ToPort,
+		}
+		if r.SrcNet != nil {
+			view.SrcIP = r.SrcNet.String()
+		}
+		if r.DstNet != nil {
+			view.DstIP = r.DstNet.String()
+		}
+		if r.ToIP != nil {
+			view.ToIP = r.ToIP.String()
+		}
+		out = append(out, view)
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *Handlers) AddNATRule(c *gin.Context) {
+	var req struct {
+		Type    string `json:"type"`
+		SrcIP   string `json:"src_ip"`
+		DstIP   string `json:"dst_ip"`
+		SrcPort int    `json:"src_port"`
+		DstPort int    `json:"dst_port"`
+		ToIP    string `json:"to_ip"`
+		ToPort  int    `json:"to_port"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+
+	var srcNet *net.IPNet
+	if req.SrcIP != "" {
+		_, parsed, err := net.ParseCIDR(req.SrcIP)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid src_ip"})
+			return
+		}
+		srcNet = parsed
+	}
+
+	var dstNet *net.IPNet
+	if req.DstIP != "" {
+		_, parsed, err := net.ParseCIDR(req.DstIP)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid dst_ip"})
+			return
+		}
+		dstNet = parsed
+	}
+
+	rule := nat.Rule{
+		Type:    nat.Type(req.Type),
+		SrcNet:  srcNet,
+		DstNet:  dstNet,
+		SrcPort: req.SrcPort,
+		DstPort: req.DstPort,
+		ToIP:    net.ParseIP(req.ToIP),
+		ToPort:  req.ToPort,
+	}
+	h.NAT.AddRule(rule)
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *Handlers) GetQoS(c *gin.Context) {
+	classes := h.QoS.Classes()
+	c.JSON(http.StatusOK, classes)
+}
+
+func (h *Handlers) AddQoSClass(c *gin.Context) {
+	var req struct {
+		Name          string `json:"name"`
+		Protocol      string `json:"protocol"`
+		SrcPort       int    `json:"src_port"`
+		DstPort       int    `json:"dst_port"`
+		RateLimitKbps int    `json:"rate_limit_kbps"`
+		Priority      int    `json:"priority"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+
+	class := qos.Class{
+		Name:          req.Name,
+		Protocol:      req.Protocol,
+		SrcPort:       req.SrcPort,
+		DstPort:       req.DstPort,
+		RateLimitKbps: req.RateLimitKbps,
+		Priority:      req.Priority,
+	}
+	h.QoS.AddClass(class)
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }

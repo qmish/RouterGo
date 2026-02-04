@@ -51,6 +51,20 @@ func NewTable(rules []Rule) *Table {
 	}
 }
 
+func (t *Table) AddRule(rule Rule) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.rules = append(t.rules, rule)
+}
+
+func (t *Table) Rules() []Rule {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make([]Rule, 0, len(t.rules))
+	out = append(out, t.rules...)
+	return out
+}
+
 func (t *Table) Apply(pkt network.Packet) network.Packet {
 	t.mu.Lock()
 	defer t.mu.Unlock()

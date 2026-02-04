@@ -56,6 +56,8 @@ func main() {
 	handlers := &api.Handlers{
 		Routes:   routeTable,
 		Firewall: firewallEngine,
+		NAT:      natTable,
+		QoS:      qosQueue,
 		Metrics:  metricsSrv,
 	}
 	api.RegisterRoutes(router, handlers)
