@@ -61,6 +61,20 @@ func (e *Engine) SetDefaultPolicy(chain string, action Action) {
 	e.defaultPolicies[strings.ToUpper(chain)] = action
 }
 
+func (e *Engine) Rules() []Rule {
+	out := make([]Rule, 0, len(e.rules))
+	out = append(out, e.rules...)
+	return out
+}
+
+func (e *Engine) DefaultPolicies() map[string]Action {
+	out := make(map[string]Action, len(e.defaultPolicies))
+	for k, v := range e.defaultPolicies {
+		out[k] = v
+	}
+	return out
+}
+
 func (e *Engine) Evaluate(chain string, pkt network.Packet) Action {
 	for _, rule := range e.rules {
 		if rule.Chain != "" && !strings.EqualFold(rule.Chain, chain) {
