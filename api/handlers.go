@@ -103,6 +103,7 @@ func (h *Handlers) GetStats(c *gin.Context) {
 		"bytes_total":   snapshot.Bytes,
 		"errors_total":  snapshot.Errors,
 		"drops_total":   snapshot.Drops,
+		"drops_by_reason": snapshot.DropsByReason,
 	})
 }
 

@@ -8,6 +8,9 @@ func TestMetricsSnapshot(t *testing.T) {
 	m.AddBytes(150)
 	m.IncErrors()
 	m.IncDrops()
+	m.IncDropReason("firewall")
+	m.IncDropReason("qos")
+	m.IncDropReason("firewall")
 
 	s := m.Snapshot()
 	if s.Packets != 1 {
@@ -19,7 +22,13 @@ func TestMetricsSnapshot(t *testing.T) {
 	if s.Errors != 1 {
 		t.Fatalf("expected errors 1, got %d", s.Errors)
 	}
-	if s.Drops != 1 {
-		t.Fatalf("expected drops 1, got %d", s.Drops)
+	if s.Drops != 4 {
+		t.Fatalf("expected drops 4, got %d", s.Drops)
+	}
+	if s.DropsByReason["firewall"] != 2 {
+		t.Fatalf("expected firewall drops 2, got %d", s.DropsByReason["firewall"])
+	}
+	if s.DropsByReason["qos"] != 1 {
+		t.Fatalf("expected qos drops 1, got %d", s.DropsByReason["qos"])
 	}
 }
