@@ -116,6 +116,17 @@ func (e *Engine) ChainHits() map[string]uint64 {
 	return out
 }
 
+func (e *Engine) ResetStats() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for i := range e.hits {
+		e.hits[i] = 0
+	}
+	for k := range e.chainHits {
+		e.chainHits[k] = 0
+	}
+}
+
 func (e *Engine) Evaluate(chain string, pkt network.Packet) Action {
 	e.mu.Lock()
 	defer e.mu.Unlock()

@@ -97,13 +97,13 @@ func (h *Handlers) AddFirewallRule(c *gin.Context) {
 func (h *Handlers) GetStats(c *gin.Context) {
 	snapshot := h.Metrics.Snapshot()
 	c.JSON(http.StatusOK, gin.H{
-		"status":          "ok",
-		"routes_count":    len(h.Routes.Routes()),
-		"packets_total":   snapshot.Packets,
-		"bytes_total":     snapshot.Bytes,
-		"errors_total":    snapshot.Errors,
-		"drops_total":     snapshot.Drops,
-		"drops_by_reason": snapshot.DropsByReason,
+		"status":             "ok",
+		"routes_count":       len(h.Routes.Routes()),
+		"packets_total":      snapshot.Packets,
+		"bytes_total":        snapshot.Bytes,
+		"errors_total":       snapshot.Errors,
+		"drops_total":        snapshot.Drops,
+		"drops_by_reason":    snapshot.DropsByReason,
 		"qos_drops_by_class": snapshot.QoSDropsByClass,
 	})
 }
@@ -159,6 +159,11 @@ func (h *Handlers) GetFirewallStats(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"chain_hits": h.Firewall.ChainHits(),
 	})
+}
+
+func (h *Handlers) ResetFirewallStats(c *gin.Context) {
+	h.Firewall.ResetStats()
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 func (h *Handlers) SetFirewallDefault(c *gin.Context) {
@@ -222,6 +227,11 @@ func (h *Handlers) GetNAT(c *gin.Context) {
 		out = append(out, view)
 	}
 	c.JSON(http.StatusOK, out)
+}
+
+func (h *Handlers) ResetNATStats(c *gin.Context) {
+	h.NAT.ResetStats()
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 func (h *Handlers) AddNATRule(c *gin.Context) {

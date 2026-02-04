@@ -74,3 +74,21 @@ func TestSetFirewallDefault(t *testing.T) {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 }
+
+func TestResetFirewallStats(t *testing.T) {
+	router := setupFirewallRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/firewall/stats", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	resetReq := httptest.NewRequest(http.MethodPost, "/api/firewall/reset", nil)
+	resetW := httptest.NewRecorder()
+	router.ServeHTTP(resetW, resetReq)
+	if resetW.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resetW.Code)
+	}
+}
