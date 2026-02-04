@@ -2,23 +2,11 @@
 
 package platform
 
-import (
-	"context"
-	"errors"
-	"testing"
-)
+import "testing"
 
-func TestNewPacketIOLinuxStub(t *testing.T) {
-	io, err := NewPacketIO(Options{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if io == nil {
-		t.Fatalf("expected packet io instance")
-	}
-
-	_, err = io.ReadPacket(context.Background())
-	if !errors.Is(err, ErrNotSupported) {
-		t.Fatalf("expected ErrNotSupported, got %v", err)
+func TestNewPacketIOInvalidInterface(t *testing.T) {
+	_, err := NewPacketIO(Options{})
+	if err == nil {
+		t.Fatalf("expected error for empty interface name")
 	}
 }
