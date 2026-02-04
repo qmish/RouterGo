@@ -107,6 +107,8 @@ type P2PConfig struct {
 	MulticastAddr  string `mapstructure:"multicast_addr"`
 	SyncInterval   int    `mapstructure:"sync_interval"`
 	PeerTTLSeconds int    `mapstructure:"peer_ttl_seconds"`
+	PrivateKeyFile string `mapstructure:"private_key_file"`
+	PublicKeyFile  string `mapstructure:"public_key_file"`
 }
 
 type ProxyConfig struct {

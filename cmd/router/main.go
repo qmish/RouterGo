@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/hex"
 	"flag"
 	"net"
 	"os"
@@ -371,6 +373,7 @@ func buildP2P(cfg *config.Config, table *routing.Table, metricsSrv *metrics.Metr
 	if !cfg.P2P.Enabled {
 		return nil
 	}
+	pubKey, privKey := loadP2PKeys(cfg.P2P.PublicKeyFile, cfg.P2P.PrivateKeyFile, log)
 	engine := p2p.NewEngine(p2p.Config{
 		PeerID:        cfg.P2P.PeerID,
 		Discovery:     cfg.P2P.Discovery,
@@ -378,6 +381,8 @@ func buildP2P(cfg *config.Config, table *routing.Table, metricsSrv *metrics.Metr
 		PeerTTL:       time.Duration(cfg.P2P.PeerTTLSeconds) * time.Second,
 		ListenAddr:    cfg.P2P.ListenAddr,
 		MulticastAddr: cfg.P2P.MulticastAddr,
+		PublicKey:     pubKey,
+		PrivateKey:    privKey,
 	}, table, nil, metricsSrv.IncP2PPeer, metricsSrv.IncP2PRouteSynced)
 
 	if err := engine.Start(ctx); err != nil {
@@ -469,4 +474,31 @@ func parseCIDRs(values []string) []*net.IPNet {
 		out = append(out, netw)
 	}
 	return out
+}
+
+func loadP2PKeys(pubPath string, privPath string, log *logger.Logger) (ed25519.PublicKey, ed25519.PrivateKey) {
+	if pubPath == "" || privPath == "" {
+		return nil, nil
+	}
+	pubData, err := os.ReadFile(pubPath)
+	if err != nil {
+		log.Warn("p2p public key read failed", map[string]any{"err": err.Error()})
+		return nil, nil
+	}
+	privData, err := os.ReadFile(privPath)
+	if err != nil {
+		log.Warn("p2p private key read failed", map[string]any{"err": err.Error()})
+		return nil, nil
+	}
+	pubRaw, err := hex.DecodeString(strings.TrimSpace(string(pubData)))
+	if err != nil {
+		log.Warn("p2p public key decode failed", map[string]any{"err": err.Error()})
+		return nil, nil
+	}
+	privRaw, err := hex.DecodeString(strings.TrimSpace(string(privData)))
+	if err != nil {
+		log.Warn("p2p private key decode failed", map[string]any{"err": err.Error()})
+		return nil, nil
+	}
+	return ed25519.PublicKey(pubRaw), ed25519.PrivateKey(privRaw)
 }
