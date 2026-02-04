@@ -59,6 +59,20 @@ p2p:
   multicast_addr: 224.0.0.251:5355
   sync_interval: 10
 
+proxy:
+  enabled: false
+  listen_addr: :8081
+  h3_addr: :8443
+  upstream: http://example.com
+  cache_size: 100
+  cache_ttl_seconds: 60
+  enable_gzip: true
+  enable_brotli: false
+  enable_h3: false
+  hsts: false
+  cert_file: ""
+  key_file: ""
+
 api:
   address: :8080
 

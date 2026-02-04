@@ -24,6 +24,8 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	router.GET("/api/p2p/peers", handlers.GetP2PPeers)
 	router.GET("/api/p2p/routes", handlers.GetP2PRoutes)
 	router.POST("/api/p2p/reset", handlers.ResetP2P)
+	router.GET("/api/proxy/stats", handlers.GetProxyStats)
+	router.POST("/api/proxy/cache/clear", handlers.ClearProxyCache)
 	router.GET("/api/nat", handlers.GetNAT)
 	router.POST("/api/nat/reset", handlers.ResetNATStats)
 	router.POST("/api/nat", handlers.AddNATRule)

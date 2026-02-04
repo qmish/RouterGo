@@ -18,6 +18,7 @@ type Config struct {
 	SelfHeal   SelfHealConfig       `mapstructure:"selfheal"`
 	Dashboard  DashboardConfig      `mapstructure:"dashboard"`
 	P2P        P2PConfig            `mapstructure:"p2p"`
+	Proxy      ProxyConfig          `mapstructure:"proxy"`
 	API        APIConfig            `mapstructure:"api"`
 	Metrics    MetricsConfig        `mapstructure:"metrics"`
 	Logging    LoggingConfig        `mapstructure:"logging"`
@@ -102,6 +103,21 @@ type P2PConfig struct {
 	ListenAddr    string `mapstructure:"listen_addr"`
 	MulticastAddr string `mapstructure:"multicast_addr"`
 	SyncInterval  int    `mapstructure:"sync_interval"`
+}
+
+type ProxyConfig struct {
+	Enabled        bool   `mapstructure:"enabled"`
+	ListenAddr     string `mapstructure:"listen_addr"`
+	H3Addr         string `mapstructure:"h3_addr"`
+	Upstream       string `mapstructure:"upstream"`
+	CacheSize      int    `mapstructure:"cache_size"`
+	CacheTTLSeconds int   `mapstructure:"cache_ttl_seconds"`
+	EnableGzip     bool   `mapstructure:"enable_gzip"`
+	EnableBrotli   bool   `mapstructure:"enable_brotli"`
+	EnableH3       bool   `mapstructure:"enable_h3"`
+	HSTS           bool   `mapstructure:"hsts"`
+	CertFile       string `mapstructure:"cert_file"`
+	KeyFile        string `mapstructure:"key_file"`
 }
 
 type APIConfig struct {
@@ -203,6 +219,15 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.P2P.PeerID == "" {
 		cfg.P2P.PeerID = "node-1"
+	}
+	if cfg.Proxy.ListenAddr == "" {
+		cfg.Proxy.ListenAddr = ":8081"
+	}
+	if cfg.Proxy.CacheSize == 0 {
+		cfg.Proxy.CacheSize = 100
+	}
+	if cfg.Proxy.CacheTTLSeconds == 0 {
+		cfg.Proxy.CacheTTLSeconds = 60
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"router-go/pkg/ids"
 	"router-go/pkg/nat"
 	"router-go/pkg/p2p"
+	"router-go/pkg/proxy"
 	"router-go/pkg/qos"
 	"router-go/pkg/routing"
 
@@ -27,6 +28,7 @@ type Handlers struct {
 	QoS      *qos.QueueManager
 	Flow     *flow.Engine
 	P2P      *p2p.Engine
+	Proxy    *proxy.Proxy
 	ConfigMgr *config.Manager
 	Metrics  *metrics.Metrics
 }
@@ -118,6 +120,9 @@ func (h *Handlers) GetStats(c *gin.Context) {
 		"config_apply_failed_total": snapshot.ConfigApplyFailed,
 		"p2p_peers_total": snapshot.P2PPeers,
 		"p2p_routes_synced_total": snapshot.P2PRoutesSynced,
+		"proxy_cache_hits_total": snapshot.ProxyCacheHits,
+		"proxy_cache_miss_total": snapshot.ProxyCacheMiss,
+		"proxy_compress_total": snapshot.ProxyCompress,
 		"bytes_total":        snapshot.Bytes,
 		"errors_total":       snapshot.Errors,
 		"drops_total":        snapshot.Drops,
@@ -428,6 +433,23 @@ func (h *Handlers) ResetP2P(c *gin.Context) {
 		return
 	}
 	h.P2P.Reset()
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *Handlers) GetProxyStats(c *gin.Context) {
+	if h.Proxy == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "proxy disabled"})
+		return
+	}
+	c.JSON(http.StatusOK, h.Proxy.Stats())
+}
+
+func (h *Handlers) ClearProxyCache(c *gin.Context) {
+	if h.Proxy == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "proxy disabled"})
+		return
+	}
+	h.Proxy.ClearCache()
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 

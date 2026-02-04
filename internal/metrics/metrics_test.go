@@ -23,6 +23,9 @@ func TestMetricsSnapshot(t *testing.T) {
 	m.IncConfigApplyFailed()
 	m.IncP2PPeer()
 	m.IncP2PRouteSynced()
+	m.IncProxyCacheHit()
+	m.IncProxyCacheMiss()
+	m.IncProxyCompress()
 
 	s := m.Snapshot()
 	if s.Packets != 1 {
@@ -72,5 +75,14 @@ func TestMetricsSnapshot(t *testing.T) {
 	}
 	if s.P2PRoutesSynced != 1 {
 		t.Fatalf("expected p2p routes synced 1, got %d", s.P2PRoutesSynced)
+	}
+	if s.ProxyCacheHits != 1 {
+		t.Fatalf("expected proxy cache hits 1, got %d", s.ProxyCacheHits)
+	}
+	if s.ProxyCacheMiss != 1 {
+		t.Fatalf("expected proxy cache miss 1, got %d", s.ProxyCacheMiss)
+	}
+	if s.ProxyCompress != 1 {
+		t.Fatalf("expected proxy compress 1, got %d", s.ProxyCompress)
 	}
 }
