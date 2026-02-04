@@ -119,10 +119,12 @@ func (h *Handlers) GetFirewallRules(c *gin.Context) {
 		DstPort      int    `json:"dst_port,omitempty"`
 		InInterface  string `json:"in_interface,omitempty"`
 		OutInterface string `json:"out_interface,omitempty"`
+		Hits         uint64 `json:"hits"`
 	}
-	rules := h.Firewall.Rules()
-	out := make([]ruleView, 0, len(rules))
-	for _, r := range rules {
+	stats := h.Firewall.RulesWithStats()
+	out := make([]ruleView, 0, len(stats))
+	for _, stat := range stats {
+		r := stat.Rule
 		view := ruleView{
 			Chain:        r.Chain,
 			Action:       string(r.Action),
@@ -131,6 +133,7 @@ func (h *Handlers) GetFirewallRules(c *gin.Context) {
 			DstPort:      r.DstPort,
 			InInterface:  r.InInterface,
 			OutInterface: r.OutInterface,
+			Hits:         stat.Hits,
 		}
 		if r.SrcNet != nil {
 			view.SrcIP = r.SrcNet.String()

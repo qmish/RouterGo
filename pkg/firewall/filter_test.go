@@ -81,3 +81,24 @@ func TestFirewallDefaultPolicy(t *testing.T) {
 		t.Fatalf("expected DROP, got %s", got)
 	}
 }
+
+func TestFirewallRuleHits(t *testing.T) {
+	engine := NewEngine([]Rule{
+		{
+			Chain:  "FORWARD",
+			Action: ActionAccept,
+		},
+	})
+
+	pkt := network.Packet{}
+	engine.Evaluate("FORWARD", pkt)
+	engine.Evaluate("FORWARD", pkt)
+
+	stats := engine.RulesWithStats()
+	if len(stats) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(stats))
+	}
+	if stats[0].Hits != 2 {
+		t.Fatalf("expected 2 hits, got %d", stats[0].Hits)
+	}
+}
