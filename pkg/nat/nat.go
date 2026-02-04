@@ -36,18 +36,21 @@ type ConnValue struct {
 	TranslatedIP   string
 	TranslatedPort int
 	Target         string
+	RuleIndex      int
 }
 
 type Table struct {
 	mu    sync.Mutex
 	rules []Rule
 	conns map[ConnKey]ConnValue
+	hits  []uint64
 }
 
 func NewTable(rules []Rule) *Table {
 	return &Table{
 		rules: rules,
 		conns: make(map[ConnKey]ConnValue),
+		hits:  make([]uint64, len(rules)),
 	}
 }
 
@@ -55,6 +58,7 @@ func (t *Table) AddRule(rule Rule) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.rules = append(t.rules, rule)
+	t.hits = append(t.hits, 0)
 }
 
 func (t *Table) Rules() []Rule {
@@ -65,21 +69,45 @@ func (t *Table) Rules() []Rule {
 	return out
 }
 
+type RuleStat struct {
+	Rule Rule
+	Hits uint64
+}
+
+func (t *Table) RulesWithStats() []RuleStat {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make([]RuleStat, 0, len(t.rules))
+	for i, rule := range t.rules {
+		out = append(out, RuleStat{
+			Rule: rule,
+			Hits: t.hits[i],
+		})
+	}
+	return out
+}
+
 func (t *Table) Apply(pkt network.Packet) network.Packet {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	key := makeConnKey(pkt)
 	if val, ok := t.conns[key]; ok {
+		if val.RuleIndex >= 0 && val.RuleIndex < len(t.hits) {
+			t.hits[val.RuleIndex]++
+		}
 		applyTranslation(&pkt, val)
 		return pkt
 	}
 
-	for _, rule := range t.rules {
+	for i, rule := range t.rules {
 		if !matchRule(rule, pkt) {
 			continue
 		}
 		translated, forwardVal, reverseKey, reverseVal := applyRule(rule, pkt)
+		t.hits[i]++
+		forwardVal.RuleIndex = i
+		reverseVal.RuleIndex = i
 		if forwardVal.Target != "" {
 			t.conns[key] = forwardVal
 		}
@@ -147,9 +175,9 @@ func applyTranslation(pkt *network.Packet, val ConnValue) {
 
 func applyRule(rule Rule, pkt network.Packet) (network.Packet, ConnValue, ConnKey, ConnValue) {
 	translated := pkt
-	forward := ConnValue{}
+	forward := ConnValue{RuleIndex: -1}
 	reverseKey := ConnKey{}
-	reverse := ConnValue{}
+	reverse := ConnValue{RuleIndex: -1}
 
 	switch rule.Type {
 	case TypeSNAT:
@@ -177,6 +205,7 @@ func applyRule(rule Rule, pkt network.Packet) (network.Packet, ConnValue, ConnKe
 			Target:         "dst",
 			TranslatedIP:   originalSrcIP.String(),
 			TranslatedPort: originalSrcPort,
+			RuleIndex:      -1,
 		}
 	case TypeDNAT:
 		originalDstIP := pkt.Metadata.DstIP
@@ -203,6 +232,7 @@ func applyRule(rule Rule, pkt network.Packet) (network.Packet, ConnValue, ConnKe
 			Target:         "src",
 			TranslatedIP:   originalDstIP.String(),
 			TranslatedPort: originalDstPort,
+			RuleIndex:      -1,
 		}
 	}
 

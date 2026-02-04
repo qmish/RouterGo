@@ -191,15 +191,18 @@ func (h *Handlers) GetNAT(c *gin.Context) {
 		DstPort int    `json:"dst_port,omitempty"`
 		ToIP    string `json:"to_ip,omitempty"`
 		ToPort  int    `json:"to_port,omitempty"`
+		Hits    uint64 `json:"hits"`
 	}
-	rules := h.NAT.Rules()
-	out := make([]natView, 0, len(rules))
-	for _, r := range rules {
+	stats := h.NAT.RulesWithStats()
+	out := make([]natView, 0, len(stats))
+	for _, stat := range stats {
+		r := stat.Rule
 		view := natView{
 			Type:    string(r.Type),
 			SrcPort: r.SrcPort,
 			DstPort: r.DstPort,
 			ToPort:  r.ToPort,
+			Hits:    stat.Hits,
 		}
 		if r.SrcNet != nil {
 			view.SrcIP = r.SrcNet.String()
