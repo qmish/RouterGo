@@ -2,6 +2,7 @@ package nat
 
 import (
 	"net"
+	"strings"
 	"sync"
 
 	"router-go/pkg/network"
@@ -25,15 +26,15 @@ type Rule struct {
 }
 
 type ConnKey struct {
-	SrcIP   string
-	DstIP   string
-	SrcPort int
-	DstPort int
-	Proto   string
+	SrcIP   [16]byte
+	DstIP   [16]byte
+	SrcPort uint16
+	DstPort uint16
+	Proto   uint8
 }
 
 type ConnValue struct {
-	TranslatedIP   string
+	TranslatedIP   net.IP
 	TranslatedPort int
 	Target         string
 	RuleIndex      int
@@ -157,31 +158,27 @@ func matchRule(rule Rule, pkt network.Packet) bool {
 }
 
 func makeConnKey(pkt network.Packet) ConnKey {
-	proto := pkt.Metadata.Protocol
-	if proto == "" {
-		proto = "UNKNOWN"
-	}
 	return ConnKey{
-		SrcIP:   pkt.Metadata.SrcIP.String(),
-		DstIP:   pkt.Metadata.DstIP.String(),
-		SrcPort: pkt.Metadata.SrcPort,
-		DstPort: pkt.Metadata.DstPort,
-		Proto:   proto,
+		SrcIP:   ipToKey(pkt.Metadata.SrcIP),
+		DstIP:   ipToKey(pkt.Metadata.DstIP),
+		SrcPort: uint16(pkt.Metadata.SrcPort),
+		DstPort: uint16(pkt.Metadata.DstPort),
+		Proto:   protoKey(pkt.Metadata.Protocol),
 	}
 }
 
 func applyTranslation(pkt *network.Packet, val ConnValue) {
 	switch val.Target {
 	case "src":
-		if val.TranslatedIP != "" {
-			pkt.Metadata.SrcIP = net.ParseIP(val.TranslatedIP)
+		if val.TranslatedIP != nil {
+			pkt.Metadata.SrcIP = val.TranslatedIP
 		}
 		if val.TranslatedPort != 0 {
 			pkt.Metadata.SrcPort = val.TranslatedPort
 		}
 	case "dst":
-		if val.TranslatedIP != "" {
-			pkt.Metadata.DstIP = net.ParseIP(val.TranslatedIP)
+		if val.TranslatedIP != nil {
+			pkt.Metadata.DstIP = val.TranslatedIP
 		}
 		if val.TranslatedPort != 0 {
 			pkt.Metadata.DstPort = val.TranslatedPort
@@ -202,7 +199,7 @@ func applyRule(rule Rule, pkt network.Packet) (network.Packet, ConnValue, ConnKe
 
 		if rule.ToIP != nil {
 			translated.Metadata.SrcIP = rule.ToIP
-			forward.TranslatedIP = rule.ToIP.String()
+			forward.TranslatedIP = rule.ToIP
 		}
 		if rule.ToPort != 0 {
 			translated.Metadata.SrcPort = rule.ToPort
@@ -211,15 +208,15 @@ func applyRule(rule Rule, pkt network.Packet) (network.Packet, ConnValue, ConnKe
 		forward.Target = "src"
 
 		reverseKey = ConnKey{
-			SrcIP:   pkt.Metadata.DstIP.String(),
-			DstIP:   translated.Metadata.SrcIP.String(),
-			SrcPort: pkt.Metadata.DstPort,
-			DstPort: translated.Metadata.SrcPort,
-			Proto:   pkt.Metadata.Protocol,
+			SrcIP:   ipToKey(pkt.Metadata.DstIP),
+			DstIP:   ipToKey(translated.Metadata.SrcIP),
+			SrcPort: uint16(pkt.Metadata.DstPort),
+			DstPort: uint16(translated.Metadata.SrcPort),
+			Proto:   protoKey(pkt.Metadata.Protocol),
 		}
 		reverse = ConnValue{
 			Target:         "dst",
-			TranslatedIP:   originalSrcIP.String(),
+			TranslatedIP:   originalSrcIP,
 			TranslatedPort: originalSrcPort,
 			RuleIndex:      -1,
 		}
@@ -229,7 +226,7 @@ func applyRule(rule Rule, pkt network.Packet) (network.Packet, ConnValue, ConnKe
 
 		if rule.ToIP != nil {
 			translated.Metadata.DstIP = rule.ToIP
-			forward.TranslatedIP = rule.ToIP.String()
+			forward.TranslatedIP = rule.ToIP
 		}
 		if rule.ToPort != 0 {
 			translated.Metadata.DstPort = rule.ToPort
@@ -238,15 +235,15 @@ func applyRule(rule Rule, pkt network.Packet) (network.Packet, ConnValue, ConnKe
 		forward.Target = "dst"
 
 		reverseKey = ConnKey{
-			SrcIP:   translated.Metadata.DstIP.String(),
-			DstIP:   pkt.Metadata.SrcIP.String(),
-			SrcPort: translated.Metadata.DstPort,
-			DstPort: pkt.Metadata.SrcPort,
-			Proto:   pkt.Metadata.Protocol,
+			SrcIP:   ipToKey(translated.Metadata.DstIP),
+			DstIP:   ipToKey(pkt.Metadata.SrcIP),
+			SrcPort: uint16(translated.Metadata.DstPort),
+			DstPort: uint16(pkt.Metadata.SrcPort),
+			Proto:   protoKey(pkt.Metadata.Protocol),
 		}
 		reverse = ConnValue{
 			Target:         "src",
-			TranslatedIP:   originalDstIP.String(),
+			TranslatedIP:   originalDstIP,
 			TranslatedPort: originalDstPort,
 			RuleIndex:      -1,
 		}
@@ -256,4 +253,36 @@ func applyRule(rule Rule, pkt network.Packet) (network.Packet, ConnValue, ConnKe
 		applyTranslation(&translated, forward)
 	}
 	return translated, forward, reverseKey, reverse
+}
+
+func ipToKey(ip net.IP) [16]byte {
+	var out [16]byte
+	if ip == nil {
+		return out
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		out[10] = 0xff
+		out[11] = 0xff
+		copy(out[12:], ip4)
+		return out
+	}
+	if ip16 := ip.To16(); ip16 != nil {
+		copy(out[:], ip16)
+	}
+	return out
+}
+
+func protoKey(proto string) uint8 {
+	switch {
+	case strings.EqualFold(proto, "TCP"):
+		return 6
+	case strings.EqualFold(proto, "UDP"):
+		return 17
+	case strings.EqualFold(proto, "ICMP"):
+		return 1
+	case strings.EqualFold(proto, "ICMPv6"):
+		return 58
+	default:
+		return 0
+	}
 }
