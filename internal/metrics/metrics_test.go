@@ -112,3 +112,38 @@ func TestIncDropReasonIncrementsCounters(t *testing.T) {
 		t.Fatalf("expected firewall drop reason 1, got %d", s.DropsByReason["firewall"])
 	}
 }
+
+func TestIncDropReasonCachedCounters(t *testing.T) {
+	m := NewWithRegistry(prometheus.NewRegistry())
+	m.IncDropReason("parse")
+	m.IncDropReason("ids")
+
+	s := m.Snapshot()
+	if s.Drops != 2 {
+		t.Fatalf("expected drops 2, got %d", s.Drops)
+	}
+	if s.DropsByReason["parse"] != 1 {
+		t.Fatalf("expected parse drop reason 1, got %d", s.DropsByReason["parse"])
+	}
+	if s.DropsByReason["ids"] != 1 {
+		t.Fatalf("expected ids drop reason 1, got %d", s.DropsByReason["ids"])
+	}
+}
+
+func TestSnapshotIncludesCommonDropReasons(t *testing.T) {
+	m := NewWithRegistry(prometheus.NewRegistry())
+
+	s := m.Snapshot()
+	if _, ok := s.DropsByReason["parse"]; !ok {
+		t.Fatalf("expected parse drop reason to be present")
+	}
+	if _, ok := s.DropsByReason["ids"]; !ok {
+		t.Fatalf("expected ids drop reason to be present")
+	}
+	if _, ok := s.DropsByReason["firewall"]; !ok {
+		t.Fatalf("expected firewall drop reason to be present")
+	}
+	if _, ok := s.DropsByReason["qos"]; !ok {
+		t.Fatalf("expected qos drop reason to be present")
+	}
+}

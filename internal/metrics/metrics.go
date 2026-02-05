@@ -34,6 +34,10 @@ type Metrics struct {
 	ProxyCacheHitsTotal    prometheus.Counter
 	ProxyCacheMissTotal    prometheus.Counter
 	ProxyCompressTotal     prometheus.Counter
+	dropReasonParse        prometheus.Counter
+	dropReasonIDS          prometheus.Counter
+	dropReasonFirewall     prometheus.Counter
+	dropReasonQoS          prometheus.Counter
 	packetsCount           atomic.Uint64
 	bytesCount             atomic.Uint64
 	errorsCount            atomic.Uint64
@@ -50,6 +54,10 @@ type Metrics struct {
 	proxyCacheHitsCount    atomic.Uint64
 	proxyCacheMissCount    atomic.Uint64
 	proxyCompressCount     atomic.Uint64
+	dropParseCount         atomic.Uint64
+	dropIDSCount           atomic.Uint64
+	dropFirewallCount      atomic.Uint64
+	dropQoSCount           atomic.Uint64
 	mu                     sync.Mutex
 	dropsByReason          map[string]uint64
 	qosDropsByClass        map[string]uint64
@@ -151,6 +159,10 @@ func NewWithRegistry(reg prometheus.Registerer) *Metrics {
 	if reg == nil {
 		reg = prometheus.DefaultRegisterer
 	}
+	m.dropReasonParse = m.DropsByReason.WithLabelValues("parse")
+	m.dropReasonIDS = m.DropsByReason.WithLabelValues("ids")
+	m.dropReasonFirewall = m.DropsByReason.WithLabelValues("firewall")
+	m.dropReasonQoS = m.DropsByReason.WithLabelValues("qos")
 	reg.MustRegister(
 		m.PacketsTotal,
 		m.BytesTotal,
@@ -204,10 +216,25 @@ func (m *Metrics) IncDropReason(reason string) {
 		return
 	}
 	m.IncDrops()
-	m.DropsByReason.WithLabelValues(reason).Inc()
-	m.mu.Lock()
-	m.dropsByReason[reason]++
-	m.mu.Unlock()
+	switch reason {
+	case "parse":
+		m.dropReasonParse.Inc()
+		m.dropParseCount.Add(1)
+	case "ids":
+		m.dropReasonIDS.Inc()
+		m.dropIDSCount.Add(1)
+	case "firewall":
+		m.dropReasonFirewall.Inc()
+		m.dropFirewallCount.Add(1)
+	case "qos":
+		m.dropReasonQoS.Inc()
+		m.dropQoSCount.Add(1)
+	default:
+		m.DropsByReason.WithLabelValues(reason).Inc()
+		m.mu.Lock()
+		m.dropsByReason[reason]++
+		m.mu.Unlock()
+	}
 }
 
 func (m *Metrics) IncQoSDrop(class string) {
@@ -343,6 +370,10 @@ func (m *Metrics) Snapshot() Snapshot {
 		idsRules[k] = v
 	}
 	m.mu.Unlock()
+	reasons["parse"] = m.dropParseCount.Load()
+	reasons["ids"] = m.dropIDSCount.Load()
+	reasons["firewall"] = m.dropFirewallCount.Load()
+	reasons["qos"] = m.dropQoSCount.Load()
 	return Snapshot{
 		Packets:           m.packetsCount.Load(),
 		Bytes:             m.bytesCount.Load(),
