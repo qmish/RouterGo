@@ -23,6 +23,10 @@ type Rule struct {
 	DstPort int
 	ToIP    net.IP
 	ToPort  int
+	hasSrcNet  bool
+	hasDstNet  bool
+	hasSrcPort bool
+	hasDstPort bool
 }
 
 type ConnKey struct {
@@ -49,7 +53,7 @@ type Table struct {
 
 func NewTable(rules []Rule) *Table {
 	return &Table{
-		rules: rules,
+		rules: normalizeRules(rules),
 		conns: make(map[ConnKey]ConnValue),
 		hits:  make([]uint64, len(rules)),
 	}
@@ -58,7 +62,7 @@ func NewTable(rules []Rule) *Table {
 func (t *Table) AddRule(rule Rule) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.rules = append(t.rules, rule)
+	t.rules = append(t.rules, normalizeRule(rule))
 	t.hits = append(t.hits, 0)
 }
 
@@ -99,7 +103,7 @@ func (t *Table) ResetStats() {
 func (t *Table) ReplaceRules(rules []Rule) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.rules = rules
+	t.rules = normalizeRules(rules)
 	t.hits = make([]uint64, len(rules))
 	t.conns = make(map[ConnKey]ConnValue)
 }
@@ -138,20 +142,20 @@ func (t *Table) Apply(pkt network.Packet) network.Packet {
 }
 
 func matchRule(rule Rule, pkt network.Packet) bool {
-	if rule.SrcNet != nil {
+	if rule.hasSrcNet {
 		if pkt.Metadata.SrcIP == nil || !rule.SrcNet.Contains(pkt.Metadata.SrcIP) {
 			return false
 		}
 	}
-	if rule.DstNet != nil {
+	if rule.hasDstNet {
 		if pkt.Metadata.DstIP == nil || !rule.DstNet.Contains(pkt.Metadata.DstIP) {
 			return false
 		}
 	}
-	if rule.SrcPort != 0 && rule.SrcPort != pkt.Metadata.SrcPort {
+	if rule.hasSrcPort && rule.SrcPort != pkt.Metadata.SrcPort {
 		return false
 	}
-	if rule.DstPort != 0 && rule.DstPort != pkt.Metadata.DstPort {
+	if rule.hasDstPort && rule.DstPort != pkt.Metadata.DstPort {
 		return false
 	}
 	return true
@@ -285,4 +289,20 @@ func protoKey(proto string) uint8 {
 	default:
 		return 0
 	}
+}
+
+func normalizeRule(rule Rule) Rule {
+	rule.hasSrcNet = rule.SrcNet != nil
+	rule.hasDstNet = rule.DstNet != nil
+	rule.hasSrcPort = rule.SrcPort != 0
+	rule.hasDstPort = rule.DstPort != 0
+	return rule
+}
+
+func normalizeRules(rules []Rule) []Rule {
+	out := make([]Rule, 0, len(rules))
+	for _, rule := range rules {
+		out = append(out, normalizeRule(rule))
+	}
+	return out
 }
