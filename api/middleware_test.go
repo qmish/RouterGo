@@ -118,6 +118,69 @@ func TestAuthMiddlewareBearerToken(t *testing.T) {
 	}
 }
 
+func TestAuthMiddlewareAllowlistAllows(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := config.SecurityConfig{
+		Enabled:       true,
+		RequireAuth:   false,
+		AllowedCIDRs:  []string{"10.0.0.0/8"},
+	}
+	r := gin.New()
+	r.Use(AuthMiddleware(cfg, nil))
+	r.GET("/ok", func(c *gin.Context) { c.Status(200) })
+
+	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
+	req.RemoteAddr = "10.1.2.3:1234"
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+}
+
+func TestAuthMiddlewareAllowlistBlocks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := config.SecurityConfig{
+		Enabled:       true,
+		RequireAuth:   false,
+		AllowedCIDRs:  []string{"10.0.0.0/8"},
+	}
+	r := gin.New()
+	r.Use(AuthMiddleware(cfg, nil))
+	r.GET("/ok", func(c *gin.Context) { c.Status(200) })
+
+	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
+	req.RemoteAddr = "192.168.1.5:1234"
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rr.Code)
+	}
+}
+
+func TestAuthMiddlewareAllowlistMisconfigured(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := config.SecurityConfig{
+		Enabled:       true,
+		RequireAuth:   false,
+		AllowedCIDRs:  []string{"bad-cidr"},
+	}
+	r := gin.New()
+	r.Use(AuthMiddleware(cfg, nil))
+	r.GET("/ok", func(c *gin.Context) { c.Status(200) })
+
+	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
+	req.RemoteAddr = "10.1.2.3:1234"
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", rr.Code)
+	}
+}
+
 func TestAuthMiddlewareSHA256Token(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	sum := sha256.Sum256([]byte("secret-token"))

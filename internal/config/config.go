@@ -170,10 +170,11 @@ type MetricsExportConfig struct {
 }
 
 type SecurityConfig struct {
-	Enabled     bool        `mapstructure:"enabled"`
-	RequireAuth bool        `mapstructure:"require_auth"`
-	Tokens      []TokenConfig `mapstructure:"tokens"`
-	TLS         TLSConfig   `mapstructure:"tls"`
+	Enabled       bool          `mapstructure:"enabled"`
+	RequireAuth   bool          `mapstructure:"require_auth"`
+	AllowedCIDRs  []string      `mapstructure:"allowed_cidrs"`
+	Tokens        []TokenConfig `mapstructure:"tokens"`
+	TLS           TLSConfig     `mapstructure:"tls"`
 }
 
 type TokenConfig struct {
