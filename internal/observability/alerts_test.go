@@ -48,6 +48,23 @@ func TestAlertStoreLimit(t *testing.T) {
 	}
 }
 
+func TestAlertStoreDefaultLimit(t *testing.T) {
+	store := NewAlertStore(0)
+	if store.Limit() != 1000 {
+		t.Fatalf("expected default limit 1000, got %d", store.Limit())
+	}
+}
+
+func TestAlertStoreListCopy(t *testing.T) {
+	store := NewAlertStore(2)
+	store.Add(Alert{ID: "a"})
+	list := store.List()
+	list[0].ID = "changed"
+	if store.List()[0].ID != "a" {
+		t.Fatalf("expected list to be a copy")
+	}
+}
+
 func hasAlertType(alerts []Alert, typ AlertType) bool {
 	for _, alert := range alerts {
 		if alert.Type == typ {
