@@ -253,8 +253,30 @@
         return res.json();
       }
 
+      function buildOverridesPayload() {
+        const ifaceName = document.getElementById('presetInterfaceName')?.value.trim();
+        const ifaceIP = document.getElementById('presetInterfaceIP')?.value.trim();
+        const gateway = document.getElementById('presetGateway')?.value.trim();
+        const overrides = {};
+        if (ifaceName) {
+          overrides.interface_name = ifaceName;
+        }
+        if (ifaceIP) {
+          overrides.interface_ip = ifaceIP;
+        }
+        if (gateway) {
+          overrides.default_gateway = gateway;
+        }
+        return Object.keys(overrides).length ? { overrides } : {};
+      }
+
       async function previewPreset(id) {
-        const res = await fetch(`/api/presets/${encodeURIComponent(id)}/preview`, { method: 'POST' });
+        const payload = buildOverridesPayload();
+        const res = await fetch(`/api/presets/${encodeURIComponent(id)}/preview`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           throw new Error(data.error || 'Не удалось получить сводку');
@@ -263,7 +285,12 @@
       }
 
       async function applyPreset(id) {
-        const res = await fetch(`/api/presets/${encodeURIComponent(id)}/apply`, { method: 'POST' });
+        const payload = buildOverridesPayload();
+        const res = await fetch(`/api/presets/${encodeURIComponent(id)}/apply`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           throw new Error(data.error || 'Не удалось применить пресет');
@@ -474,6 +501,14 @@
         detail.innerHTML = `
           <div><strong>${preset.name}</strong></div>
           <div class="meta">${preset.description || ''}</div>
+          <div style="margin-top:8px;">
+            <div class="meta">Параметры (опционально)</div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
+              <input id="presetInterfaceName" placeholder="Интерфейс (например, eth0)" value="${(lastPresetPreview?.config?.interfaces?.[0]?.name) || ''}" />
+              <input id="presetInterfaceIP" placeholder="LAN CIDR (например, 192.168.10.1/24)" value="${(lastPresetPreview?.config?.interfaces?.[0]?.ip) || ''}" />
+              <input id="presetGateway" placeholder="Шлюз (например, 192.168.10.254)" value="${(lastPresetPreview?.config?.routes?.[0]?.gateway) || ''}" />
+            </div>
+          </div>
           <div class="preset-summary" style="margin-top:8px;">
             <table>
               <thead><tr><th>Раздел</th><th>Было</th><th>Станет</th></tr></thead>

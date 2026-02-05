@@ -20,6 +20,12 @@ type ApplySummary struct {
 	QoSClassesAfter     int `json:"qos_classes_after"`
 }
 
+type Overrides struct {
+	InterfaceName  string `json:"interface_name"`
+	InterfaceIP    string `json:"interface_ip"`
+	DefaultGateway string `json:"default_gateway"`
+}
+
 func ApplyPreset(base *config.Config, preset Preset) (*config.Config, ApplySummary, error) {
 	if base == nil {
 		return nil, ApplySummary{}, fmt.Errorf("base config is nil")
@@ -58,6 +64,23 @@ func ApplyPreset(base *config.Config, preset Preset) (*config.Config, ApplySumma
 	return next, summarize(base, next), nil
 }
 
+func ApplyPresetWithOverrides(base *config.Config, preset Preset, overrides Overrides) (*config.Config, ApplySummary, error) {
+	next, summary, err := ApplyPreset(base, preset)
+	if err != nil {
+		return nil, ApplySummary{}, err
+	}
+	if isOverridesEmpty(overrides) {
+		return next, summary, nil
+	}
+	if err := applyOverrides(next, overrides); err != nil {
+		return nil, ApplySummary{}, err
+	}
+	if err := config.Validate(next); err != nil {
+		return nil, ApplySummary{}, err
+	}
+	return next, summary, nil
+}
+
 func summarize(before *config.Config, after *config.Config) ApplySummary {
 	return ApplySummary{
 		RoutesBefore:        len(before.Routes),
@@ -81,6 +104,62 @@ func cloneConfig(cfg *config.Config) (*config.Config, error) {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 	return &cloned, nil
+}
+
+func isOverridesEmpty(overrides Overrides) bool {
+	return strings.TrimSpace(overrides.InterfaceName) == "" &&
+		strings.TrimSpace(overrides.InterfaceIP) == "" &&
+		strings.TrimSpace(overrides.DefaultGateway) == ""
+}
+
+func applyOverrides(next *config.Config, overrides Overrides) error {
+	if next == nil {
+		return fmt.Errorf("config is nil")
+	}
+	if overrides.InterfaceIP != "" {
+		if _, _, err := net.ParseCIDR(strings.TrimSpace(overrides.InterfaceIP)); err != nil {
+			return fmt.Errorf("override interface_ip invalid")
+		}
+	}
+	if overrides.DefaultGateway != "" {
+		if net.ParseIP(strings.TrimSpace(overrides.DefaultGateway)) == nil {
+			return fmt.Errorf("override default_gateway invalid")
+		}
+	}
+	if overrides.InterfaceName != "" {
+		found := false
+		for i := range next.Interfaces {
+			if next.Interfaces[i].Name == overrides.InterfaceName {
+				found = true
+				if overrides.InterfaceIP != "" {
+					next.Interfaces[i].IP = overrides.InterfaceIP
+				}
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("override interface_name not found")
+		}
+	} else if overrides.InterfaceIP != "" {
+		if len(next.Interfaces) != 1 {
+			return fmt.Errorf("override interface_ip requires interface_name")
+		}
+		next.Interfaces[0].IP = overrides.InterfaceIP
+	}
+	if overrides.DefaultGateway != "" {
+		updated := false
+		for i := range next.Routes {
+			if next.Routes[i].Destination == "0.0.0.0/0" {
+				next.Routes[i].Gateway = overrides.DefaultGateway
+				updated = true
+				break
+			}
+		}
+		if !updated {
+			return fmt.Errorf("default route not found")
+		}
+	}
+	return nil
 }
 
 func validatePresetSettings(settings PresetSettings) error {

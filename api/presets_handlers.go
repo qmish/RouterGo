@@ -1,6 +1,7 @@
 package api
 
 import (
+	"io"
 	"net/http"
 	"strings"
 
@@ -40,7 +41,12 @@ func (h *Handlers) PreviewPreset(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager not configured"})
 		return
 	}
-	next, summary, err := presets.ApplyPreset(h.ConfigMgr.Current(), preset)
+	var req presetApplyRequest
+	if err := c.ShouldBindJSON(&req); err != nil && err != io.EOF {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	next, summary, err := presets.ApplyPresetWithOverrides(h.ConfigMgr.Current(), preset, req.Overrides)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -61,7 +67,12 @@ func (h *Handlers) ApplyPreset(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager not configured"})
 		return
 	}
-	next, summary, err := presets.ApplyPreset(h.ConfigMgr.Current(), preset)
+	var req presetApplyRequest
+	if err := c.ShouldBindJSON(&req); err != nil && err != io.EOF {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	next, summary, err := presets.ApplyPresetWithOverrides(h.ConfigMgr.Current(), preset, req.Overrides)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -138,4 +149,8 @@ func (h *Handlers) getPresetOrFail(c *gin.Context) (presets.Preset, bool) {
 		return presets.Preset{}, false
 	}
 	return preset, true
+}
+
+type presetApplyRequest struct {
+	Overrides presets.Overrides `json:"overrides"`
 }
