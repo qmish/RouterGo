@@ -135,6 +135,43 @@ func TestApplyRuleOrder(t *testing.T) {
 	}
 }
 
+func TestApplyPortFilter(t *testing.T) {
+	table := NewTable([]Rule{
+		{
+			Type:    TypeSNAT,
+			SrcPort: 1234,
+			DstPort: 80,
+			ToIP:    net.ParseIP("203.0.113.10"),
+		},
+	})
+
+	pktMismatch := network.Packet{
+		Metadata: network.PacketMetadata{
+			SrcIP:   net.ParseIP("10.1.2.3"),
+			DstIP:   net.ParseIP("1.1.1.1"),
+			SrcPort: 1234,
+			DstPort: 81,
+		},
+	}
+	out := table.Apply(pktMismatch)
+	if out.Metadata.SrcIP.String() != "10.1.2.3" {
+		t.Fatalf("expected no match for dst port, got %s", out.Metadata.SrcIP)
+	}
+
+	pktMatch := network.Packet{
+		Metadata: network.PacketMetadata{
+			SrcIP:   net.ParseIP("10.1.2.3"),
+			DstIP:   net.ParseIP("1.1.1.1"),
+			SrcPort: 1234,
+			DstPort: 80,
+		},
+	}
+	out2 := table.Apply(pktMatch)
+	if out2.Metadata.SrcIP.String() != "203.0.113.10" {
+		t.Fatalf("expected SNAT on port match, got %s", out2.Metadata.SrcIP)
+	}
+}
+
 func TestConnectionTrackingReuse(t *testing.T) {
 	_, srcNet, _ := net.ParseCIDR("10.0.0.0/8")
 	table := NewTable([]Rule{
