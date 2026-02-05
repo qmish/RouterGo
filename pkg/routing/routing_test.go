@@ -50,3 +50,37 @@ func TestLookupPreferLowerMetricOnEqualPrefix(t *testing.T) {
 		t.Fatalf("expected eth1 (lower metric), got %s", route.Interface)
 	}
 }
+
+func TestLookupAfterAdd(t *testing.T) {
+	_, aNet, _ := net.ParseCIDR("10.0.0.0/8")
+	_, bNet, _ := net.ParseCIDR("10.2.0.0/16")
+	table := NewTable([]Route{{Destination: *aNet, Interface: "eth0"}})
+
+	table.Add(Route{Destination: *bNet, Interface: "eth1"})
+
+	dst := net.ParseIP("10.2.1.1")
+	route, ok := table.Lookup(dst)
+	if !ok {
+		t.Fatalf("expected a route match")
+	}
+	if route.Interface != "eth1" {
+		t.Fatalf("expected eth1, got %s", route.Interface)
+	}
+}
+
+func TestLookupAfterReplaceRoutes(t *testing.T) {
+	_, aNet, _ := net.ParseCIDR("10.0.0.0/8")
+	_, bNet, _ := net.ParseCIDR("192.168.0.0/16")
+	table := NewTable([]Route{{Destination: *aNet, Interface: "eth0"}})
+
+	table.ReplaceRoutes([]Route{{Destination: *bNet, Interface: "eth1"}})
+
+	dst := net.ParseIP("192.168.1.10")
+	route, ok := table.Lookup(dst)
+	if !ok {
+		t.Fatalf("expected a route match")
+	}
+	if route.Interface != "eth1" {
+		t.Fatalf("expected eth1, got %s", route.Interface)
+	}
+}
