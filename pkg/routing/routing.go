@@ -70,6 +70,19 @@ func (t *Table) RemoveRoute(match Route) bool {
 	return false
 }
 
+func (t *Table) UpdateRoute(old Route, updated Route) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for i, route := range t.routes {
+		if routesEqual(route, old) {
+			t.routes[i] = updated
+			t.rebuildSorted()
+			return true
+		}
+	}
+	return false
+}
+
 func (t *Table) rebuildSorted() {
 	t.sorted = make([]Route, 0, len(t.routes))
 	t.sorted = append(t.sorted, t.routes...)
