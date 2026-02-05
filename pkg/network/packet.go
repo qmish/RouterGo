@@ -13,6 +13,7 @@ type Packet struct {
 	IngressInterface string
 	EgressInterface  string
 	Metadata         PacketMetadata
+	Release          func()
 }
 
 type PacketMetadata struct {

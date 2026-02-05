@@ -167,24 +167,27 @@ func startPacketLoop(
 			default:
 			}
 
-			pkt, err := io.ReadPacket(ctx)
-			if err != nil {
-				metricsSrv.IncErrors()
-				continue
-			}
+		pkt, err := io.ReadPacket(ctx)
+		if err != nil {
+			metricsSrv.IncErrors()
+			continue
+		}
 			metricsSrv.IncRxPackets()
 
 			meta, err := network.ParseIPMetadata(pkt.Data)
 			if err != nil {
 				metricsSrv.IncErrors()
 				metricsSrv.IncDropReason("parse")
+				if pkt.Release != nil {
+					pkt.Release()
+				}
 				continue
 			}
 			pkt.Metadata = meta
 
 			metricsSrv.IncPackets()
 			metricsSrv.AddBytes(len(pkt.Data))
-			processPacket(pkt, localIPs, routes, firewallEngine, idsEngine, natTable, qosQueue, metricsSrv, flowEngine)
+			handlePacket(pkt, localIPs, routes, firewallEngine, idsEngine, natTable, qosQueue, metricsSrv, flowEngine)
 		}
 	}()
 }
@@ -232,6 +235,23 @@ func processPacket(
 	}
 	if !ok {
 		return
+	}
+}
+
+func handlePacket(
+	pkt network.Packet,
+	localIPs []net.IP,
+	routes *routing.Table,
+	firewallEngine *firewall.Engine,
+	idsEngine *ids.Engine,
+	natTable *nat.Table,
+	qosQueue *qos.QueueManager,
+	metricsSrv *metrics.Metrics,
+	flowEngine *flow.Engine,
+) {
+	processPacket(pkt, localIPs, routes, firewallEngine, idsEngine, natTable, qosQueue, metricsSrv, flowEngine)
+	if pkt.Release != nil {
+		pkt.Release()
 	}
 }
 
