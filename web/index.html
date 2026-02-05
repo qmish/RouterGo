@@ -319,7 +319,11 @@
         <h3>API и интеграции</h3>
         <div class="meta">/settings/api</div>
         <div class="muted">API ключи, webhooks, экспорт конфигурации.</div>
-        <div class="muted settings-section">В разработке.</div>
+        <div class="form-actions settings-section">
+          <button id="exportConfigJsonBtn">Экспорт JSON</button>
+          <button id="exportConfigYamlBtn">Экспорт YAML</button>
+        </div>
+        <div class="muted settings-section">Остальные функции в разработке.</div>
       </div>
     </div>
 
@@ -830,6 +834,23 @@
           throw new Error(err.error || 'Ошибка запроса');
         }
         return res.json().catch(() => ({}));
+      }
+
+      async function downloadConfig(format) {
+        const res = await fetch(`/api/config/export?format=${format}`);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || 'Ошибка экспорта');
+        }
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `routergo-config.${format === 'yaml' ? 'yaml' : 'json'}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
       }
 
       async function loadRoutes() {
@@ -1555,6 +1576,22 @@
         try {
           await apiDelete('/api/qos', { name: target.dataset.name || '' });
           await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('exportConfigJsonBtn').addEventListener('click', async () => {
+        try {
+          await downloadConfig('json');
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('exportConfigYamlBtn').addEventListener('click', async () => {
+        try {
+          await downloadConfig('yaml');
         } catch (e) {
           alert(e.message);
         }

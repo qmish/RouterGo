@@ -25,6 +25,7 @@ import (
 	"router-go/pkg/routing"
 
 	"github.com/gin-gonic/gin"
+	"go.yaml.in/yaml/v3"
 )
 
 type Handlers struct {
@@ -868,6 +869,31 @@ func (h *Handlers) GetConfigSnapshots(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, h.ConfigMgr.Snapshots())
+}
+
+func (h *Handlers) GetConfigExport(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	format := strings.ToLower(strings.TrimSpace(c.Query("format")))
+	cfg := h.ConfigMgr.Current()
+	switch format {
+	case "", "json":
+		c.JSON(http.StatusOK, cfg)
+		return
+	case "yaml", "yml":
+		data, err := yaml.Marshal(cfg)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "export failed"})
+			return
+		}
+		c.Data(http.StatusOK, "text/yaml; charset=utf-8", data)
+		return
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported format"})
+		return
+	}
 }
 
 func (h *Handlers) GetDashboardTopBandwidth(c *gin.Context) {
