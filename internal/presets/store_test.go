@@ -85,6 +85,46 @@ func TestApplyPresetUpdatesConfig(t *testing.T) {
 	}
 }
 
+func TestStoreSavePreset(t *testing.T) {
+	dir := t.TempDir()
+	store, err := LoadStore(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	preset := Preset{
+		ID:          "custom-1",
+		Name:        "Мой пресет",
+		Description: "User preset",
+		Settings: PresetSettings{
+			Firewall: []config.FirewallRuleConfig{
+				{Chain: "INPUT", Action: "ACCEPT", Protocol: "ICMP"},
+			},
+		},
+	}
+	if err := store.Save(preset); err != nil {
+		t.Fatalf("save preset: %v", err)
+	}
+	loaded, ok := store.Get("custom-1")
+	if !ok {
+		t.Fatalf("expected preset to be stored")
+	}
+	if loaded.Name != "Мой пресет" {
+		t.Fatalf("unexpected name %q", loaded.Name)
+	}
+}
+
+func TestStoreSaveInvalidID(t *testing.T) {
+	dir := t.TempDir()
+	store, err := LoadStore(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	preset := Preset{ID: "bad id"}
+	if err := store.Save(preset); err == nil {
+		t.Fatalf("expected error for invalid id")
+	}
+}
+
 func writePreset(t *testing.T, dir string, name string, content string) {
 	t.Helper()
 	path := filepath.Join(dir, name)

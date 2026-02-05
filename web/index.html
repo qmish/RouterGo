@@ -170,6 +170,7 @@
       const storageKey = 'routergo_ui';
       let presetsList = [];
       let selectedPresetId = '';
+      let lastPresetPreview = null;
 
       function demoTop() {
         const labels = Array.from({length: 8}, (_, i) => `10.0.0.${i+1}`);
@@ -255,6 +256,19 @@
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           throw new Error(data.error || 'Не удалось применить пресет');
+        }
+        return res.json();
+      }
+
+      async function savePreset(preset) {
+        const res = await fetch('/api/presets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(preset)
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || 'Не удалось сохранить пресет');
         }
         return res.json();
       }
@@ -439,15 +453,26 @@
             </table>
           </div>
           <div style="margin-top:8px;">${extrasList}</div>
+          <div style="margin-top:12px;">
+            <div class="meta">Сохранить как новый пресет</div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
+              <input id="presetIdInput" placeholder="id (latin/цифры/-/_)" />
+              <input id="presetNameInput" placeholder="Название" />
+              <button id="savePresetBtn">Сохранить</button>
+            </div>
+          </div>
         `;
+        document.getElementById('savePresetBtn').addEventListener('click', saveCustomPresetFromPreview);
       }
 
       async function showPresetSummary(id) {
         selectedPresetId = id;
         try {
           const data = await previewPreset(id);
+          lastPresetPreview = data;
           renderPresetDetail(data.preset, data.summary);
         } catch (e) {
+          lastPresetPreview = null;
           renderPresetDetail(null, null, e.message);
         }
       }
@@ -460,8 +485,48 @@
             return;
           }
           await applyPreset(id);
+          lastPresetPreview = data;
           renderPresetDetail(data.preset, data.summary);
           alert('Пресет применён');
+        } catch (e) {
+          alert(e.message);
+        }
+      }
+
+      function buildPresetFromConfig(config) {
+        return {
+          settings: {
+            interfaces: config.interfaces || [],
+            routes: config.routes || [],
+            firewall_defaults: config.firewall_defaults || {},
+            firewall: config.firewall || [],
+            nat: config.nat || [],
+            qos: config.qos || [],
+            ids: config.ids || {}
+          }
+        };
+      }
+
+      async function saveCustomPresetFromPreview() {
+        if (!lastPresetPreview || !lastPresetPreview.config) {
+          alert('Сначала выберите пресет и получите сводку');
+          return;
+        }
+        const id = document.getElementById('presetIdInput').value.trim();
+        const name = document.getElementById('presetNameInput').value.trim();
+        if (!id || !name) {
+          alert('Укажите id и название');
+          return;
+        }
+        try {
+          const base = buildPresetFromConfig(lastPresetPreview.config);
+          base.id = id;
+          base.name = name;
+          base.description = 'Пользовательский пресет';
+          await savePreset(base);
+          presetsList = await loadPresets();
+          renderPresets(presetsList);
+          alert('Пресет сохранён');
         } catch (e) {
           alert(e.message);
         }

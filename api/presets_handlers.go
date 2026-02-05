@@ -73,6 +73,23 @@ func (h *Handlers) ApplyPreset(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "summary": summary})
 }
 
+func (h *Handlers) CreatePreset(c *gin.Context) {
+	if h.Presets == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "presets not configured"})
+		return
+	}
+	var req presets.Preset
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	if err := h.Presets.Save(req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"status": "ok", "id": req.ID})
+}
+
 func (h *Handlers) getPresetOrFail(c *gin.Context) (presets.Preset, bool) {
 	if h.Presets == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "presets not configured"})
