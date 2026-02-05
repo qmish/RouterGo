@@ -259,3 +259,30 @@ func TestFirewallRemoveRule(t *testing.T) {
 		t.Fatalf("expected remove to fail for missing rule")
 	}
 }
+
+func TestFirewallUpdateRule(t *testing.T) {
+	_, srcNet, _ := net.ParseCIDR("10.0.0.0/8")
+	engine := NewEngine([]Rule{
+		{
+			Chain:    "INPUT",
+			Action:   ActionAccept,
+			Protocol: "TCP",
+			SrcNet:   srcNet,
+			DstPort:  22,
+		},
+	})
+	ok := engine.UpdateRule(
+		Rule{Chain: "INPUT", Action: ActionAccept, Protocol: "TCP", SrcNet: srcNet, DstPort: 22},
+		Rule{Chain: "INPUT", Action: ActionDrop, Protocol: "TCP", SrcNet: srcNet, DstPort: 22},
+	)
+	if !ok {
+		t.Fatalf("expected update to succeed")
+	}
+	rules := engine.Rules()
+	if len(rules) != 1 || rules[0].Action != ActionDrop {
+		t.Fatalf("unexpected updated rule: %+v", rules)
+	}
+	if engine.UpdateRule(Rule{Chain: "OUTPUT"}, Rule{Chain: "OUTPUT"}) {
+		t.Fatalf("expected update to fail for missing rule")
+	}
+}

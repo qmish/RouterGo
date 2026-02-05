@@ -345,6 +345,95 @@ func (h *Handlers) DeleteFirewallRule(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
+func (h *Handlers) UpdateFirewallRule(c *gin.Context) {
+	var req struct {
+		OldChain        string `json:"old_chain"`
+		OldAction       string `json:"old_action"`
+		OldProtocol     string `json:"old_protocol"`
+		OldSrcIP        string `json:"old_src_ip"`
+		OldDstIP        string `json:"old_dst_ip"`
+		OldSrcPort      int    `json:"old_src_port"`
+		OldDstPort      int    `json:"old_dst_port"`
+		OldInInterface  string `json:"old_in_interface"`
+		OldOutInterface string `json:"old_out_interface"`
+		Chain           string `json:"chain"`
+		Action          string `json:"action"`
+		Protocol        string `json:"protocol"`
+		SrcIP           string `json:"src_ip"`
+		DstIP           string `json:"dst_ip"`
+		SrcPort         int    `json:"src_port"`
+		DstPort         int    `json:"dst_port"`
+		InInterface     string `json:"in_interface"`
+		OutInterface    string `json:"out_interface"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+
+	parseNet := func(value string) (*net.IPNet, error) {
+		if strings.TrimSpace(value) == "" {
+			return nil, nil
+		}
+		_, parsed, err := net.ParseCIDR(value)
+		if err != nil {
+			return nil, err
+		}
+		return parsed, nil
+	}
+
+	oldSrc, err := parseNet(req.OldSrcIP)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid old_src_ip"})
+		return
+	}
+	oldDst, err := parseNet(req.OldDstIP)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid old_dst_ip"})
+		return
+	}
+	src, err := parseNet(req.SrcIP)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid src_ip"})
+		return
+	}
+	dst, err := parseNet(req.DstIP)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid dst_ip"})
+		return
+	}
+
+	ok := h.Firewall.UpdateRule(
+		firewall.Rule{
+			Chain:        req.OldChain,
+			Action:       firewall.Action(req.OldAction),
+			Protocol:     req.OldProtocol,
+			SrcNet:       oldSrc,
+			DstNet:       oldDst,
+			SrcPort:      req.OldSrcPort,
+			DstPort:      req.OldDstPort,
+			InInterface:  req.OldInInterface,
+			OutInterface: req.OldOutInterface,
+		},
+		firewall.Rule{
+			Chain:        req.Chain,
+			Action:       firewall.Action(req.Action),
+			Protocol:     req.Protocol,
+			SrcNet:       src,
+			DstNet:       dst,
+			SrcPort:      req.SrcPort,
+			DstPort:      req.DstPort,
+			InInterface:  req.InInterface,
+			OutInterface: req.OutInterface,
+		},
+	)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
 func (h *Handlers) GetStats(c *gin.Context) {
 	snapshot := h.Metrics.Snapshot()
 	c.JSON(http.StatusOK, gin.H{
