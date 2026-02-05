@@ -42,6 +42,52 @@ func TestSignatureRuleMatch(t *testing.T) {
 	}
 }
 
+func TestSignatureRuleProtocolNumMatch(t *testing.T) {
+	engine := NewEngine(Config{AlertLimit: 10})
+	engine.AddRule(Rule{
+		Name:     "proto-num",
+		Action:   ActionAlert,
+		Protocol: "TCP",
+		Enabled:  true,
+	})
+
+	pkt := network.Packet{
+		Metadata: network.PacketMetadata{
+			ProtocolNum: 6,
+			SrcIP:       net.ParseIP("10.0.0.1"),
+			DstIP:       net.ParseIP("1.1.1.1"),
+		},
+	}
+
+	res := engine.Detect(pkt)
+	if res.Alert == nil || res.Alert.Reason != "proto-num" {
+		t.Fatalf("expected protocol num match")
+	}
+}
+
+func TestSignatureRuleProtocolNumMismatch(t *testing.T) {
+	engine := NewEngine(Config{AlertLimit: 10})
+	engine.AddRule(Rule{
+		Name:     "proto-udp",
+		Action:   ActionAlert,
+		Protocol: "UDP",
+		Enabled:  true,
+	})
+
+	pkt := network.Packet{
+		Metadata: network.PacketMetadata{
+			ProtocolNum: 6,
+			SrcIP:       net.ParseIP("10.0.0.1"),
+			DstIP:       net.ParseIP("1.1.1.1"),
+		},
+	}
+
+	res := engine.Detect(pkt)
+	if res.Alert != nil {
+		t.Fatalf("expected protocol num mismatch to skip")
+	}
+}
+
 func TestRulePriority(t *testing.T) {
 	engine := NewEngine(Config{AlertLimit: 10})
 	engine.AddRule(Rule{
