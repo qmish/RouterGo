@@ -3,6 +3,8 @@ package api
 import "github.com/gin-gonic/gin"
 
 func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
+	router.GET("/health", handlers.GetHealth)
+
 	apiGroup := router.Group("/api")
 	if handlers.Observability != nil {
 		apiGroup.Use(TraceMiddleware(handlers.Observability))

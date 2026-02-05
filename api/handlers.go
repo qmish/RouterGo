@@ -497,6 +497,10 @@ func (h *Handlers) ResetIDS(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
+func (h *Handlers) GetHealth(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
 func (h *Handlers) ApplyConfig(c *gin.Context) {
 	if h.ConfigMgr == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})

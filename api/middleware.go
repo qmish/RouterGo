@@ -27,7 +27,7 @@ func AuthMiddleware(cfg config.SecurityConfig, log *logger.Logger) gin.HandlerFu
 	roles := map[string]string{}
 	var hashedTokens []hashedToken
 	allowedNets := parseAllowedCIDRs(cfg.AllowedCIDRs)
-	allowlistEnabled := len(cfg.AllowedCIDRs) > 0
+	allowlistEnabled := cfg.Enabled && len(cfg.AllowedCIDRs) > 0
 	for _, token := range cfg.Tokens {
 		value := config.ResolveSecret(token.Value)
 		if value == "" || token.Role == "" {
