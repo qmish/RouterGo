@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"router-go/internal/metrics"
+	"router-go/pkg/firewall"
 	"router-go/pkg/nat"
 	"router-go/pkg/network"
 	"router-go/pkg/qos"
@@ -131,5 +132,70 @@ func TestAddAndGetQoS(t *testing.T) {
 	}
 	if !bytes.Contains(w.Body.Bytes(), []byte("voice")) {
 		t.Fatalf("expected qos class in response")
+	}
+}
+
+func TestGetRoutes(t *testing.T) {
+	table := routing.NewTable(nil)
+	_, dst, _ := net.ParseCIDR("10.10.0.0/16")
+	table.Add(routing.Route{
+		Destination: *dst,
+		Gateway:     net.ParseIP("192.0.2.1"),
+		Interface:   "eth0",
+		Metric:      10,
+	})
+	h := &Handlers{
+		Routes:  table,
+		NAT:     nat.NewTable(nil),
+		QoS:     qos.NewQueueManager(nil),
+		Metrics: metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/routes", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("10.10.0.0/16")) {
+		t.Fatalf("expected route in response")
+	}
+}
+
+func TestAddAndGetFirewallRules(t *testing.T) {
+	h := &Handlers{
+		Routes:   routing.NewTable(nil),
+		Firewall: firewall.NewEngine(nil),
+		NAT:      nat.NewTable(nil),
+		QoS:      qos.NewQueueManager(nil),
+		Metrics:  metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	payload := map[string]any{
+		"chain":    "INPUT",
+		"action":   "ACCEPT",
+		"protocol": "TCP",
+		"src_ip":   "10.0.0.0/8",
+		"dst_port": 22,
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/firewall", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/firewall", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("INPUT")) {
+		t.Fatalf("expected firewall rule in response")
 	}
 }
