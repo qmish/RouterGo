@@ -144,3 +144,23 @@ func TestFirewallCaseInsensitiveMatch(t *testing.T) {
 		t.Fatalf("expected ACCEPT, got %s", got)
 	}
 }
+
+func TestFirewallProtocolKeyMatch(t *testing.T) {
+	engine := NewEngine([]Rule{
+		{
+			Chain:    "FORWARD",
+			Action:   ActionAccept,
+			Protocol: "ICMPv6",
+		},
+	})
+
+	pkt := network.Packet{
+		Metadata: network.PacketMetadata{
+			Protocol: "icmpv6",
+		},
+	}
+
+	if got := engine.Evaluate("FORWARD", pkt); got != ActionAccept {
+		t.Fatalf("expected ACCEPT, got %s", got)
+	}
+}
