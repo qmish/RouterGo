@@ -20,6 +20,7 @@ type PacketMetadata struct {
 	SrcIP    net.IP
 	DstIP    net.IP
 	Protocol string
+	ProtocolNum uint8
 	SrcPort  int
 	DstPort  int
 	Length   int
@@ -106,6 +107,7 @@ func ParseIPv4Metadata(data []byte) (PacketMetadata, error) {
 		Length: h.TotalLength,
 	}
 
+	meta.ProtocolNum = h.Protocol
 	switch h.Protocol {
 	case 6:
 		meta.Protocol = "TCP"
@@ -146,6 +148,7 @@ func ParseIPv6Metadata(data []byte) (PacketMetadata, error) {
 		Length: h.PayloadLength + 40,
 	}
 
+	meta.ProtocolNum = h.NextHeader
 	switch h.NextHeader {
 	case 6:
 		meta.Protocol = "TCP"

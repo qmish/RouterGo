@@ -167,7 +167,7 @@ func makeConnKey(pkt network.Packet) ConnKey {
 		DstIP:   ipToKey(pkt.Metadata.DstIP),
 		SrcPort: uint16(pkt.Metadata.SrcPort),
 		DstPort: uint16(pkt.Metadata.DstPort),
-		Proto:   protoKey(pkt.Metadata.Protocol),
+		Proto:   packetProtoKey(pkt.Metadata),
 	}
 }
 
@@ -289,6 +289,13 @@ func protoKey(proto string) uint8 {
 	default:
 		return 0
 	}
+}
+
+func packetProtoKey(meta network.PacketMetadata) uint8 {
+	if meta.ProtocolNum != 0 {
+		return meta.ProtocolNum
+	}
+	return protoKey(meta.Protocol)
 }
 
 func normalizeRule(rule Rule) Rule {

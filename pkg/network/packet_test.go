@@ -75,6 +75,9 @@ func TestParseIPv4MetadataTCPPorts(t *testing.T) {
 	if meta.Protocol != "TCP" {
 		t.Fatalf("expected TCP, got %s", meta.Protocol)
 	}
+	if meta.ProtocolNum != 6 {
+		t.Fatalf("expected protocol num 6, got %d", meta.ProtocolNum)
+	}
 	if meta.SrcPort != 8080 || meta.DstPort != 80 {
 		t.Fatalf("unexpected ports: %d -> %d", meta.SrcPort, meta.DstPort)
 	}
@@ -101,6 +104,9 @@ func TestParseIPv4MetadataUDPPorts(t *testing.T) {
 	if meta.Protocol != "UDP" {
 		t.Fatalf("expected UDP, got %s", meta.Protocol)
 	}
+	if meta.ProtocolNum != 17 {
+		t.Fatalf("expected protocol num 17, got %d", meta.ProtocolNum)
+	}
 	if meta.SrcPort != 5000 || meta.DstPort != 53 {
 		t.Fatalf("unexpected ports: %d -> %d", meta.SrcPort, meta.DstPort)
 	}
@@ -126,6 +132,9 @@ func TestParseIPv4MetadataICMP(t *testing.T) {
 	}
 	if meta.Protocol != "ICMP" {
 		t.Fatalf("expected ICMP, got %s", meta.Protocol)
+	}
+	if meta.ProtocolNum != 1 {
+		t.Fatalf("expected protocol num 1, got %d", meta.ProtocolNum)
 	}
 	if meta.SrcPort != 0 || meta.DstPort != 0 {
 		t.Fatalf("expected empty ports, got %d -> %d", meta.SrcPort, meta.DstPort)
@@ -182,6 +191,9 @@ func TestParseIPv6MetadataTCPPorts(t *testing.T) {
 	if meta.Protocol != "TCP" {
 		t.Fatalf("expected TCP, got %s", meta.Protocol)
 	}
+	if meta.ProtocolNum != 6 {
+		t.Fatalf("expected protocol num 6, got %d", meta.ProtocolNum)
+	}
 	if meta.SrcPort != 8080 || meta.DstPort != 80 {
 		t.Fatalf("unexpected ports: %d -> %d", meta.SrcPort, meta.DstPort)
 	}
@@ -209,8 +221,41 @@ func TestParseIPv6MetadataUDPPorts(t *testing.T) {
 	if meta.Protocol != "UDP" {
 		t.Fatalf("expected UDP, got %s", meta.Protocol)
 	}
+	if meta.ProtocolNum != 17 {
+		t.Fatalf("expected protocol num 17, got %d", meta.ProtocolNum)
+	}
 	if meta.SrcPort != 5000 || meta.DstPort != 53 {
 		t.Fatalf("unexpected ports: %d -> %d", meta.SrcPort, meta.DstPort)
+	}
+}
+
+func TestParseIPv6MetadataICMPv6(t *testing.T) {
+	ipv6Header := []byte{
+		0x60, 0x00, 0x00, 0x00,
+		0x00, 0x08, 0x3a, 0x40,
+		0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+		0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
+	}
+	icmpHeader := []byte{
+		0x80, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+	}
+	data := append(ipv6Header, icmpHeader...)
+
+	meta, err := ParseIPMetadata(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if meta.Protocol != "ICMPv6" {
+		t.Fatalf("expected ICMPv6, got %s", meta.Protocol)
+	}
+	if meta.ProtocolNum != 58 {
+		t.Fatalf("expected protocol num 58, got %d", meta.ProtocolNum)
+	}
+	if meta.SrcPort != 0 || meta.DstPort != 0 {
+		t.Fatalf("expected empty ports, got %d -> %d", meta.SrcPort, meta.DstPort)
 	}
 }
 

@@ -149,7 +149,7 @@ func (e *Engine) Evaluate(chain string, pkt network.Packet) Action {
 	if chainNorm != "" {
 		e.chainHits[chainNorm]++
 	}
-	packetProto := protoToKey(pkt.Metadata.Protocol)
+	packetProto := packetProtoKey(pkt.Metadata)
 	for i, rule := range e.rules {
 		if rule.chainNorm != "" && rule.chainNorm != chainNorm {
 			continue
@@ -214,4 +214,11 @@ func protoToKey(proto string) uint8 {
 	default:
 		return 0
 	}
+}
+
+func packetProtoKey(meta network.PacketMetadata) uint8 {
+	if meta.ProtocolNum != 0 {
+		return meta.ProtocolNum
+	}
+	return protoToKey(meta.Protocol)
 }
