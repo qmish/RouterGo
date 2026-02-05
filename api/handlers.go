@@ -105,6 +105,28 @@ func (h *Handlers) AddRoute(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
+func (h *Handlers) GetInterfaces(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	cfg := h.ConfigMgr.Current()
+	type ifaceView struct {
+		Name  string `json:"name"`
+		IP    string `json:"ip"`
+		State string `json:"state"`
+	}
+	out := make([]ifaceView, 0, len(cfg.Interfaces))
+	for _, iface := range cfg.Interfaces {
+		out = append(out, ifaceView{
+			Name:  iface.Name,
+			IP:    iface.IP,
+			State: "configured",
+		})
+	}
+	c.JSON(http.StatusOK, out)
+}
+
 func (h *Handlers) AddFirewallRule(c *gin.Context) {
 	var req struct {
 		Chain        string `json:"chain"`
