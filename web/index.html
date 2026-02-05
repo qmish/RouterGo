@@ -210,6 +210,8 @@
         </div>
         <div class="form-actions">
           <button id="addFirewallBtn">Добавить правило</button>
+          <button id="updateFirewallBtn" disabled>Обновить правило</button>
+          <button id="cancelFirewallEditBtn" disabled>Отмена</button>
         </div>
         <div class="settings-section">
           <div class="muted">Default policy:</div>
@@ -904,6 +906,17 @@
                   data-in-interface="${r.in_interface || ''}"
                   data-out-interface="${r.out_interface || ''}"
                 >Удалить</button>
+                <button class="fw-edit"
+                  data-chain="${r.chain || ''}"
+                  data-action="${r.action || ''}"
+                  data-protocol="${r.protocol || ''}"
+                  data-src-ip="${r.src_ip || ''}"
+                  data-dst-ip="${r.dst_ip || ''}"
+                  data-src-port="${r.src_port ?? 0}"
+                  data-dst-port="${r.dst_port ?? 0}"
+                  data-in-interface="${r.in_interface || ''}"
+                  data-out-interface="${r.out_interface || ''}"
+                >Редактировать</button>
               </td>
             </tr>
           `;
@@ -1201,8 +1214,90 @@
         }
       });
 
+      let editingFirewall = null;
+      function setFirewallEditState(state) {
+        editingFirewall = state;
+        document.getElementById('updateFirewallBtn').disabled = !editingFirewall;
+        document.getElementById('cancelFirewallEditBtn').disabled = !editingFirewall;
+      }
+
+      function fillFirewallForm(rule) {
+        document.getElementById('fwChain').value = rule.chain || 'INPUT';
+        document.getElementById('fwAction').value = rule.action || 'ACCEPT';
+        document.getElementById('fwProtocol').value = rule.protocol || '';
+        document.getElementById('fwSrcIP').value = rule.src_ip || '';
+        document.getElementById('fwDstIP').value = rule.dst_ip || '';
+        document.getElementById('fwSrcPort').value = rule.src_port ?? '';
+        document.getElementById('fwDstPort').value = rule.dst_port ?? '';
+        document.getElementById('fwInIface').value = rule.in_interface || '';
+        document.getElementById('fwOutIface').value = rule.out_interface || '';
+      }
+
+      document.getElementById('updateFirewallBtn').addEventListener('click', async () => {
+        if (!editingFirewall) {
+          return;
+        }
+        try {
+          await apiPut('/api/firewall', {
+            old_chain: editingFirewall.chain,
+            old_action: editingFirewall.action,
+            old_protocol: editingFirewall.protocol,
+            old_src_ip: editingFirewall.src_ip,
+            old_dst_ip: editingFirewall.dst_ip,
+            old_src_port: editingFirewall.src_port,
+            old_dst_port: editingFirewall.dst_port,
+            old_in_interface: editingFirewall.in_interface,
+            old_out_interface: editingFirewall.out_interface,
+            chain: document.getElementById('fwChain').value,
+            action: document.getElementById('fwAction').value,
+            protocol: document.getElementById('fwProtocol').value.trim(),
+            src_ip: document.getElementById('fwSrcIP').value.trim(),
+            dst_ip: document.getElementById('fwDstIP').value.trim(),
+            src_port: readNumber('fwSrcPort'),
+            dst_port: readNumber('fwDstPort'),
+            in_interface: document.getElementById('fwInIface').value.trim(),
+            out_interface: document.getElementById('fwOutIface').value.trim()
+          });
+          setFirewallEditState(null);
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('cancelFirewallEditBtn').addEventListener('click', () => {
+        setFirewallEditState(null);
+        fillFirewallForm({
+          chain: 'INPUT',
+          action: 'ACCEPT',
+          protocol: '',
+          src_ip: '',
+          dst_ip: '',
+          src_port: '',
+          dst_port: '',
+          in_interface: '',
+          out_interface: ''
+        });
+      });
+
       document.getElementById('firewallTable').addEventListener('click', async (event) => {
         const target = event.target;
+        if (target.classList.contains('fw-edit')) {
+          const rule = {
+            chain: target.dataset.chain || '',
+            action: target.dataset.action || '',
+            protocol: target.dataset.protocol || '',
+            src_ip: target.dataset.srcIp || '',
+            dst_ip: target.dataset.dstIp || '',
+            src_port: parseInt(target.dataset.srcPort || '0', 10) || 0,
+            dst_port: parseInt(target.dataset.dstPort || '0', 10) || 0,
+            in_interface: target.dataset.inInterface || '',
+            out_interface: target.dataset.outInterface || ''
+          };
+          setFirewallEditState(rule);
+          fillFirewallForm(rule);
+          return;
+        }
         if (!target.classList.contains('fw-delete')) {
           return;
         }

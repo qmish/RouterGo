@@ -81,6 +81,21 @@ func (e *Engine) RemoveRule(match Rule) bool {
 	return false
 }
 
+func (e *Engine) UpdateRule(old Rule, updated Rule) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for i, rule := range e.rules {
+		if rulesEqual(rule, normalizeRule(old)) {
+			e.rules[i] = normalizeRule(updated)
+			if i < len(e.hits) {
+				e.hits[i] = 0
+			}
+			return true
+		}
+	}
+	return false
+}
+
 func (e *Engine) SetDefaultPolicy(chain string, action Action) {
 	if e.defaultPolicies == nil {
 		e.defaultPolicies = map[string]Action{}

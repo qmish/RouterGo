@@ -513,6 +513,91 @@ func TestDeleteFirewallRuleNotFound(t *testing.T) {
 	}
 }
 
+func TestUpdateFirewallRule(t *testing.T) {
+	h := &Handlers{
+		Routes:   routing.NewTable(nil),
+		Firewall: firewall.NewEngine(nil),
+		NAT:      nat.NewTable(nil),
+		QoS:      qos.NewQueueManager(nil),
+		Metrics:  metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	payload := map[string]any{
+		"chain":    "INPUT",
+		"action":   "ACCEPT",
+		"protocol": "TCP",
+		"src_ip":   "10.0.0.0/8",
+		"dst_port": 22,
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/firewall", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	update := map[string]any{
+		"old_chain":    "INPUT",
+		"old_action":   "ACCEPT",
+		"old_protocol": "TCP",
+		"old_src_ip":   "10.0.0.0/8",
+		"old_dst_port": 22,
+		"chain":        "INPUT",
+		"action":       "DROP",
+		"protocol":     "TCP",
+		"src_ip":       "10.0.0.0/8",
+		"dst_port":     22,
+	}
+	body, _ = json.Marshal(update)
+	req = httptest.NewRequest(http.MethodPut, "/api/firewall", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/firewall", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("DROP")) {
+		t.Fatalf("expected updated rule in response")
+	}
+}
+
+func TestUpdateFirewallRuleNotFound(t *testing.T) {
+	h := &Handlers{
+		Routes:   routing.NewTable(nil),
+		Firewall: firewall.NewEngine(nil),
+		NAT:      nat.NewTable(nil),
+		QoS:      qos.NewQueueManager(nil),
+		Metrics:  metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	update := map[string]any{
+		"old_chain":    "INPUT",
+		"old_action":   "ACCEPT",
+		"old_protocol": "TCP",
+		"chain":        "INPUT",
+		"action":       "DROP",
+	}
+	body, _ := json.Marshal(update)
+	req := httptest.NewRequest(http.MethodPut, "/api/firewall", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
 func TestGetHealth(t *testing.T) {
 	h := &Handlers{}
 	router := setupRouter(h)
