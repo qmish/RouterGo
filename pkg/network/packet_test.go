@@ -214,6 +214,38 @@ func TestParseIPv6MetadataUDPPorts(t *testing.T) {
 	}
 }
 
+func TestParseIPMetadataCopiesIPv4Addresses(t *testing.T) {
+	ipHeader := []byte{
+		0x45, 0x00, 0x00, 0x1c,
+		0x00, 0x00, 0x40, 0x00,
+		0x40, 0x11, 0x00, 0x00,
+		0x0a, 0x00, 0x00, 0x01,
+		0x0a, 0x00, 0x00, 0x02,
+	}
+	udpHeader := []byte{
+		0x13, 0x88, 0x00, 0x35,
+		0x00, 0x08, 0x00, 0x00,
+	}
+	data := append(ipHeader, udpHeader...)
+
+	meta, err := ParseIPMetadata(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	src := meta.SrcIP
+	dst := meta.DstIP
+
+	data[12] = 0x7f
+	data[16] = 0x7f
+
+	if !src.Equal(net.IPv4(10, 0, 0, 1)) {
+		t.Fatalf("src ip changed unexpectedly: %s", src)
+	}
+	if !dst.Equal(net.IPv4(10, 0, 0, 2)) {
+		t.Fatalf("dst ip changed unexpectedly: %s", dst)
+	}
+}
+
 func TestParseIPv4MetadataICMPTypeCode(t *testing.T) {
 	ipHeader := []byte{
 		0x45, 0x00, 0x00, 0x1c,
