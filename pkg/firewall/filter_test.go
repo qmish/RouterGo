@@ -230,3 +230,32 @@ func TestFirewallReplace(t *testing.T) {
 		t.Fatalf("expected default policy INPUT=DROP")
 	}
 }
+
+func TestFirewallRemoveRule(t *testing.T) {
+	_, srcNet, _ := net.ParseCIDR("10.0.0.0/8")
+	engine := NewEngine([]Rule{
+		{
+			Chain:    "INPUT",
+			Action:   ActionAccept,
+			Protocol: "TCP",
+			SrcNet:   srcNet,
+			DstPort:  22,
+		},
+	})
+	ok := engine.RemoveRule(Rule{
+		Chain:    "INPUT",
+		Action:   ActionAccept,
+		Protocol: "TCP",
+		SrcNet:   srcNet,
+		DstPort:  22,
+	})
+	if !ok {
+		t.Fatalf("expected rule removed")
+	}
+	if len(engine.Rules()) != 0 {
+		t.Fatalf("expected no rules left")
+	}
+	if engine.RemoveRule(Rule{Chain: "INPUT"}) {
+		t.Fatalf("expected remove to fail for missing rule")
+	}
+}

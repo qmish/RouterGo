@@ -185,7 +185,7 @@
         <div class="meta">/settings/firewall</div>
         <table id="firewallTable">
           <thead>
-            <tr><th>Chain</th><th>Action</th><th>Protocol</th><th>Src</th><th>Dst</th><th>Ports</th><th>IF</th></tr>
+            <tr><th>Chain</th><th>Action</th><th>Protocol</th><th>Src</th><th>Dst</th><th>Ports</th><th>IF</th><th>Actions</th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -877,7 +877,7 @@
       function renderFirewall(rules) {
         const tbody = document.querySelector('#firewallTable tbody');
         if (!rules || rules.length === 0) {
-          renderEmptyRow(tbody, 7, 'Правила не найдены');
+          renderEmptyRow(tbody, 8, 'Правила не найдены');
           return;
         }
         tbody.innerHTML = rules.map(r => {
@@ -892,6 +892,19 @@
               <td>${r.dst_ip || ''}</td>
               <td>${ports}</td>
               <td>${ifaces}</td>
+              <td>
+                <button class="fw-delete"
+                  data-chain="${r.chain || ''}"
+                  data-action="${r.action || ''}"
+                  data-protocol="${r.protocol || ''}"
+                  data-src-ip="${r.src_ip || ''}"
+                  data-dst-ip="${r.dst_ip || ''}"
+                  data-src-port="${r.src_port ?? 0}"
+                  data-dst-port="${r.dst_port ?? 0}"
+                  data-in-interface="${r.in_interface || ''}"
+                  data-out-interface="${r.out_interface || ''}"
+                >Удалить</button>
+              </td>
             </tr>
           `;
         }).join('');
@@ -1181,6 +1194,32 @@
             dst_port: readNumber('fwDstPort'),
             in_interface: document.getElementById('fwInIface').value.trim(),
             out_interface: document.getElementById('fwOutIface').value.trim()
+          });
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('firewallTable').addEventListener('click', async (event) => {
+        const target = event.target;
+        if (!target.classList.contains('fw-delete')) {
+          return;
+        }
+        if (!confirm('Удалить правило firewall?')) {
+          return;
+        }
+        try {
+          await apiDelete('/api/firewall', {
+            chain: target.dataset.chain || '',
+            action: target.dataset.action || '',
+            protocol: target.dataset.protocol || '',
+            src_ip: target.dataset.srcIp || '',
+            dst_ip: target.dataset.dstIp || '',
+            src_port: parseInt(target.dataset.srcPort || '0', 10) || 0,
+            dst_port: parseInt(target.dataset.dstPort || '0', 10) || 0,
+            in_interface: target.dataset.inInterface || '',
+            out_interface: target.dataset.outInterface || ''
           });
           await refreshSettings();
         } catch (e) {
