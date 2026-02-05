@@ -187,3 +187,81 @@ func TestQueueDequeueBatchMax(t *testing.T) {
 		t.Fatalf("expected 1 packet, got %d", len(batch))
 	}
 }
+
+func TestQueueAddClassAndClassesCopy(t *testing.T) {
+	q := NewQueueManager(nil)
+	q.AddClass(Class{Name: "video", Priority: 5, Protocol: "UDP"})
+
+	classes := q.Classes()
+	if len(classes) < 2 {
+		t.Fatalf("expected at least 2 classes, got %d", len(classes))
+	}
+	foundVideo := false
+	for _, cl := range classes {
+		if cl.Name == "video" {
+			foundVideo = true
+			break
+		}
+	}
+	if !foundVideo {
+		t.Fatalf("expected video class")
+	}
+	classes[0].Name = "changed"
+	if q.Classes()[0].Name == "changed" {
+		t.Fatalf("expected classes slice to be a copy")
+	}
+}
+
+func TestQueueReplaceClasses(t *testing.T) {
+	q := NewQueueManager([]Class{{Name: "voice", Priority: 5, Protocol: "UDP"}})
+	q.ReplaceClasses([]Class{{Name: "bulk", Priority: 1, Protocol: "TCP"}})
+
+	classes := q.Classes()
+	foundBulk := false
+	for _, cl := range classes {
+		if cl.Name == "bulk" {
+			foundBulk = true
+		}
+		if cl.Name == "voice" {
+			t.Fatalf("expected voice class removed after replace")
+		}
+	}
+	if !foundBulk {
+		t.Fatalf("expected bulk class after replace")
+	}
+
+	ok, dropped, className := q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "TCP"}})
+	if !ok || dropped || className != "bulk" {
+		t.Fatalf("expected enqueue into bulk class")
+	}
+}
+
+func TestAppendOrReplaceClass(t *testing.T) {
+	initial := []Class{
+		{Name: "one", Priority: 1},
+		{Name: "two", Priority: 2},
+	}
+	out := appendOrReplaceClass(initial, Class{Name: "two", Priority: 5})
+	countTwo := 0
+	for _, cl := range out {
+		if cl.Name == "two" {
+			countTwo++
+			if cl.Priority != 5 {
+				t.Fatalf("expected replaced priority 5, got %d", cl.Priority)
+			}
+		}
+	}
+	if countTwo != 1 {
+		t.Fatalf("expected one 'two' class, got %d", countTwo)
+	}
+	out = appendOrReplaceClass(initial, Class{Name: "three", Priority: 3})
+	foundThree := false
+	for _, cl := range out {
+		if cl.Name == "three" {
+			foundThree = true
+		}
+	}
+	if !foundThree {
+		t.Fatalf("expected appended class three")
+	}
+}
