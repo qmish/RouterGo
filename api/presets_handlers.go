@@ -90,6 +90,42 @@ func (h *Handlers) CreatePreset(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"status": "ok", "id": req.ID})
 }
 
+func (h *Handlers) ImportPresets(c *gin.Context) {
+	if h.Presets == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "presets not configured"})
+		return
+	}
+	var req []presets.Preset
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	updated, err := h.Presets.Import(req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "updated": updated})
+}
+
+func (h *Handlers) UpdatePresets(c *gin.Context) {
+	if h.Presets == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "presets not configured"})
+		return
+	}
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager not configured"})
+		return
+	}
+	url := h.ConfigMgr.Current().Presets.UpdateURL
+	updated, err := h.Presets.UpdateFromURL(url)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "updated": updated})
+}
+
 func (h *Handlers) getPresetOrFail(c *gin.Context) (presets.Preset, bool) {
 	if h.Presets == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "presets not configured"})

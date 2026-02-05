@@ -1,6 +1,8 @@
 package presets
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -122,6 +124,50 @@ func TestStoreSaveInvalidID(t *testing.T) {
 	preset := Preset{ID: "bad id"}
 	if err := store.Save(preset); err == nil {
 		t.Fatalf("expected error for invalid id")
+	}
+}
+
+func TestUpdateFromURL(t *testing.T) {
+	dir := t.TempDir()
+	store, err := LoadStore(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+  {"id":"up-1","name":"Updated","settings":{"firewall":[{"chain":"INPUT","action":"ACCEPT","protocol":"ICMP"}]}}
+]`))
+	}))
+	defer server.Close()
+
+	updated, err := store.UpdateFromURL(server.URL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if updated != 1 {
+		t.Fatalf("expected 1 updated preset, got %d", updated)
+	}
+	if _, ok := store.Get("up-1"); !ok {
+		t.Fatalf("expected preset to be imported")
+	}
+}
+
+func TestImportPresets(t *testing.T) {
+	dir := t.TempDir()
+	store, err := LoadStore(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	updated, err := store.Import([]Preset{
+		{ID: "p1", Name: "P1"},
+		{ID: "p2", Name: "P2"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if updated != 2 {
+		t.Fatalf("expected 2 presets, got %d", updated)
 	}
 }
 

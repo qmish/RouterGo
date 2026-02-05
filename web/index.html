@@ -143,11 +143,22 @@
       <div class="card">
         <h3>Быстрая настройка → Пресеты</h3>
         <div class="meta">Выберите профиль и посмотрите сводку изменений.</div>
+        <div style="margin:8px 0; display:flex; gap:8px; flex-wrap:wrap;">
+          <button id="updatePresetsBtn">Проверить обновления</button>
+        </div>
         <div id="presetsGrid" class="preset-grid" style="margin-top: 10px;"></div>
       </div>
       <div class="card">
         <h3>Сводка пресета</h3>
         <div id="presetDetail" class="meta">Выберите пресет</div>
+      </div>
+      <div class="card">
+        <h3>Импорт пресетов</h3>
+        <div class="meta">Вставьте JSON массива пресетов</div>
+        <textarea id="presetsImport" style="width:100%; min-height:120px;"></textarea>
+        <div style="margin-top:8px;">
+          <button id="importPresetsBtn">Импортировать</button>
+        </div>
       </div>
     </div>
 
@@ -269,6 +280,28 @@
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           throw new Error(data.error || 'Не удалось сохранить пресет');
+        }
+        return res.json();
+      }
+
+      async function importPresets(raw) {
+        const res = await fetch('/api/presets/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: raw
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || 'Не удалось импортировать пресеты');
+        }
+        return res.json();
+      }
+
+      async function updatePresets() {
+        const res = await fetch('/api/presets/update', { method: 'POST' });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || 'Не удалось обновить пресеты');
         }
         return res.json();
       }
@@ -608,6 +641,31 @@
       document.getElementById('openPresetsBtn').addEventListener('click', () => {
         setTab('presets');
         saveSettings();
+      });
+      document.getElementById('updatePresetsBtn').addEventListener('click', async () => {
+        try {
+          const res = await updatePresets();
+          presetsList = await loadPresets();
+          renderPresets(presetsList);
+          alert(`Обновлено пресетов: ${res.updated || 0}`);
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+      document.getElementById('importPresetsBtn').addEventListener('click', async () => {
+        const raw = document.getElementById('presetsImport').value.trim();
+        if (!raw) {
+          alert('Вставьте JSON массив пресетов');
+          return;
+        }
+        try {
+          await importPresets(raw);
+          presetsList = await loadPresets();
+          renderPresets(presetsList);
+          alert('Импорт завершён');
+        } catch (e) {
+          alert(e.message);
+        }
       });
 
       loadSettings();

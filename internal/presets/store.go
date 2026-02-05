@@ -3,6 +3,7 @@ package presets
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -132,6 +133,43 @@ func (s *Store) Save(preset Preset) error {
 	return nil
 }
 
+func (s *Store) Import(presets []Preset) (int, error) {
+	if len(presets) == 0 {
+		return 0, fmt.Errorf("no presets to import")
+	}
+	updated := 0
+	for _, preset := range presets {
+		if err := s.Save(preset); err != nil {
+			return updated, err
+		}
+		updated++
+	}
+	return updated, nil
+}
+
+func (s *Store) UpdateFromURL(url string) (int, error) {
+	if strings.TrimSpace(url) == "" {
+		return 0, fmt.Errorf("update url is empty")
+	}
+	resp, err := http.Get(url)
+	if err != nil {
+		return 0, fmt.Errorf("fetch presets: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		return 0, fmt.Errorf("fetch presets: status %d", resp.StatusCode)
+	}
+	var raw any
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return 0, fmt.Errorf("decode presets: %w", err)
+	}
+	presets, err := parsePresets(raw)
+	if err != nil {
+		return 0, err
+	}
+	return s.Import(presets)
+}
+
 func validPresetID(id string) bool {
 	for _, r := range id {
 		if r >= 'a' && r <= 'z' {
@@ -149,4 +187,42 @@ func validPresetID(id string) bool {
 		return false
 	}
 	return true
+}
+
+func parsePresets(raw any) ([]Preset, error) {
+	if raw == nil {
+		return nil, fmt.Errorf("empty presets payload")
+	}
+	switch v := raw.(type) {
+	case []any:
+		return decodePresetSlice(v)
+	case map[string]any:
+		if value, ok := v["presets"]; ok {
+			if list, ok := value.([]any); ok {
+				return decodePresetSlice(list)
+			}
+		}
+		return nil, fmt.Errorf("invalid presets payload")
+	default:
+		return nil, fmt.Errorf("invalid presets payload")
+	}
+}
+
+func decodePresetSlice(list []any) ([]Preset, error) {
+	if len(list) == 0 {
+		return nil, fmt.Errorf("no presets to import")
+	}
+	out := make([]Preset, 0, len(list))
+	for _, item := range list {
+		data, err := json.Marshal(item)
+		if err != nil {
+			return nil, fmt.Errorf("encode preset: %w", err)
+		}
+		var preset Preset
+		if err := json.Unmarshal(data, &preset); err != nil {
+			return nil, fmt.Errorf("decode preset: %w", err)
+		}
+		out = append(out, preset)
+	}
+	return out, nil
 }

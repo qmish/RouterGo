@@ -75,6 +75,28 @@ func TestCreatePreset(t *testing.T) {
 	}
 }
 
+func TestImportPresets(t *testing.T) {
+	store := setupPresetStore(t)
+	h := &Handlers{
+		Presets: store,
+	}
+	router := gin.New()
+	RegisterRoutes(router, h)
+
+	body := `[{"id":"a","name":"A","settings":{}},{"id":"b","name":"B","settings":{}}]`
+	req := httptest.NewRequest(http.MethodPost, "/api/presets/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	if _, ok := store.Get("a"); !ok {
+		t.Fatalf("expected preset a")
+	}
+}
+
 func setupPresetStore(t *testing.T) *presets.Store {
 	t.Helper()
 	dir := t.TempDir()
