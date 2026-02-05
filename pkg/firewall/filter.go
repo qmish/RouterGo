@@ -27,7 +27,8 @@ type Rule struct {
 	InInterface  string
 	OutInterface string
 	chainNorm    string
-	protoNorm    string
+	protoKey     uint8
+	hasProto     bool
 }
 
 type Engine struct {
@@ -148,15 +149,12 @@ func (e *Engine) Evaluate(chain string, pkt network.Packet) Action {
 	if chainNorm != "" {
 		e.chainHits[chainNorm]++
 	}
-	protoNorm := strings.ToUpper(pkt.Metadata.Protocol)
-	if protoNorm == "" {
-		protoNorm = "UNKNOWN"
-	}
+	packetProto := protoToKey(pkt.Metadata.Protocol)
 	for i, rule := range e.rules {
 		if rule.chainNorm != "" && rule.chainNorm != chainNorm {
 			continue
 		}
-		if rule.protoNorm != "" && rule.protoNorm != protoNorm {
+		if rule.hasProto && rule.protoKey != packetProto {
 			continue
 		}
 		if rule.SrcNet != nil && pkt.Metadata.SrcIP != nil && !rule.SrcNet.Contains(pkt.Metadata.SrcIP) {
@@ -190,7 +188,8 @@ func (e *Engine) Evaluate(chain string, pkt network.Packet) Action {
 
 func normalizeRule(rule Rule) Rule {
 	rule.chainNorm = strings.ToUpper(rule.Chain)
-	rule.protoNorm = strings.ToUpper(rule.Protocol)
+	rule.protoKey = protoToKey(rule.Protocol)
+	rule.hasProto = rule.Protocol != ""
 	return rule
 }
 
@@ -200,4 +199,19 @@ func normalizeRules(rules []Rule) []Rule {
 		out = append(out, normalizeRule(rule))
 	}
 	return out
+}
+
+func protoToKey(proto string) uint8 {
+	switch {
+	case strings.EqualFold(proto, "TCP"):
+		return 6
+	case strings.EqualFold(proto, "UDP"):
+		return 17
+	case strings.EqualFold(proto, "ICMP"):
+		return 1
+	case strings.EqualFold(proto, "ICMPv6"):
+		return 58
+	default:
+		return 0
+	}
 }
