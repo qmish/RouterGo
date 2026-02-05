@@ -201,6 +201,7 @@ type HAConfig struct {
 	Peers              []string `mapstructure:"peers"`
 	StateSyncInterval  int      `mapstructure:"state_sync_interval_seconds"`
 	StateEndpointPath  string   `mapstructure:"state_endpoint_path"`
+	TLS               TLSConfig `mapstructure:"tls"`
 }
 
 type APIConfig struct {
