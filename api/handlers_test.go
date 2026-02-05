@@ -238,6 +238,74 @@ func TestAddRouteInvalid(t *testing.T) {
 	}
 }
 
+func TestDeleteRoute(t *testing.T) {
+	table := routing.NewTable(nil)
+	_, dst, _ := net.ParseCIDR("10.0.0.0/24")
+	table.Add(routing.Route{
+		Destination: *dst,
+		Gateway:     net.ParseIP("192.0.2.1"),
+		Interface:   "eth0",
+		Metric:      5,
+	})
+	h := &Handlers{
+		Routes:  table,
+		NAT:     nat.NewTable(nil),
+		QoS:     qos.NewQueueManager(nil),
+		Metrics: metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	payload := map[string]any{
+		"destination": "10.0.0.0/24",
+		"gateway":     "192.0.2.1",
+		"interface":   "eth0",
+		"metric":      5,
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodDelete, "/api/routes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/routes", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if bytes.Contains(w.Body.Bytes(), []byte("10.0.0.0/24")) {
+		t.Fatalf("expected route to be removed")
+	}
+}
+
+func TestDeleteRouteNotFound(t *testing.T) {
+	h := &Handlers{
+		Routes:  routing.NewTable(nil),
+		NAT:     nat.NewTable(nil),
+		QoS:     qos.NewQueueManager(nil),
+		Metrics: metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	payload := map[string]any{
+		"destination": "10.0.0.0/24",
+		"gateway":     "192.0.2.1",
+		"interface":   "eth0",
+		"metric":      5,
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodDelete, "/api/routes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
 func TestGetInterfaces(t *testing.T) {
 	cfg := &config.Config{
 		Interfaces: []config.InterfaceConfig{

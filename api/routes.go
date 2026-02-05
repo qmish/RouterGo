@@ -17,6 +17,7 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	apiGroup.GET("/interfaces", RequireRole(roleRead), handlers.GetInterfaces)
 	apiGroup.GET("/routes", RequireRole(roleRead), handlers.GetRoutes)
 	apiGroup.POST("/routes", RequireRole(roleOps), handlers.AddRoute)
+	apiGroup.DELETE("/routes", RequireRole(roleOps), handlers.DeleteRoute)
 	apiGroup.POST("/firewall", RequireRole(roleOps), handlers.AddFirewallRule)
 	apiGroup.GET("/firewall", RequireRole(roleRead), handlers.GetFirewallRules)
 	apiGroup.GET("/firewall/defaults", RequireRole(roleRead), handlers.GetFirewallDefaults)

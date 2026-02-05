@@ -57,6 +57,19 @@ func (t *Table) ReplaceRoutes(routes []Route) {
 	t.rebuildSorted()
 }
 
+func (t *Table) RemoveRoute(match Route) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for i, route := range t.routes {
+		if routesEqual(route, match) {
+			t.routes = append(t.routes[:i], t.routes[i+1:]...)
+			t.rebuildSorted()
+			return true
+		}
+	}
+	return false
+}
+
 func (t *Table) rebuildSorted() {
 	t.sorted = make([]Route, 0, len(t.routes))
 	t.sorted = append(t.sorted, t.routes...)
@@ -69,4 +82,39 @@ func (t *Table) rebuildSorted() {
 			}
 		}
 	}
+}
+
+func routesEqual(a Route, b Route) bool {
+	if a.Interface != b.Interface || a.Metric != b.Metric {
+		return false
+	}
+	if !ipNetEqual(a.Destination, b.Destination) {
+		return false
+	}
+	if !ipEqual(a.Gateway, b.Gateway) {
+		return false
+	}
+	return true
+}
+
+func ipNetEqual(a net.IPNet, b net.IPNet) bool {
+	if len(a.Mask) != len(b.Mask) {
+		return false
+	}
+	for i := range a.Mask {
+		if a.Mask[i] != b.Mask[i] {
+			return false
+		}
+	}
+	return ipEqual(a.IP, b.IP)
+}
+
+func ipEqual(a net.IP, b net.IP) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.Equal(b)
 }

@@ -105,6 +105,47 @@ func (h *Handlers) AddRoute(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
+func (h *Handlers) DeleteRoute(c *gin.Context) {
+	var req struct {
+		Destination string `json:"destination"`
+		Gateway     string `json:"gateway"`
+		Interface   string `json:"interface"`
+		Metric      int    `json:"metric"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	if strings.TrimSpace(req.Destination) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "destination is required"})
+		return
+	}
+	_, dst, err := net.ParseCIDR(req.Destination)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid destination"})
+		return
+	}
+	var gw net.IP
+	if strings.TrimSpace(req.Gateway) != "" {
+		gw = net.ParseIP(req.Gateway)
+		if gw == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid gateway"})
+			return
+		}
+	}
+	ok := h.Routes.RemoveRoute(routing.Route{
+		Destination: *dst,
+		Gateway:     gw,
+		Interface:   req.Interface,
+		Metric:      req.Metric,
+	})
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "route not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
 func (h *Handlers) GetInterfaces(c *gin.Context) {
 	if h.ConfigMgr == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})

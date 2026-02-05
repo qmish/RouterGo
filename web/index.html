@@ -163,7 +163,7 @@
         <div class="meta">/settings/routing</div>
         <table id="routesTable">
           <thead>
-            <tr><th>Destination</th><th>Gateway</th><th>Interface</th><th>Metric</th></tr>
+            <tr><th>Destination</th><th>Gateway</th><th>Interface</th><th>Metric</th><th>Actions</th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -798,6 +798,19 @@
         return res.json().catch(() => ({}));
       }
 
+      async function apiDelete(url, payload) {
+        const res = await fetch(url, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || 'Ошибка запроса');
+        }
+        return res.json().catch(() => ({}));
+      }
+
       async function loadRoutes() {
         return apiGet('/api/routes');
       }
@@ -829,7 +842,7 @@
       function renderRoutes(routes) {
         const tbody = document.querySelector('#routesTable tbody');
         if (!routes || routes.length === 0) {
-          renderEmptyRow(tbody, 4, 'Маршруты не найдены');
+          renderEmptyRow(tbody, 5, 'Маршруты не найдены');
           return;
         }
         tbody.innerHTML = routes.map(r => `
@@ -838,6 +851,7 @@
             <td>${r.gateway || ''}</td>
             <td>${r.interface || ''}</td>
             <td>${r.metric ?? ''}</td>
+            <td><button class="route-delete" data-destination="${r.destination || ''}" data-gateway="${r.gateway || ''}" data-interface="${r.interface || ''}" data-metric="${r.metric ?? 0}">Удалить</button></td>
           </tr>
         `).join('');
       }
@@ -1150,6 +1164,31 @@
             priority: readNumber('qosPriority'),
             max_queue: readNumber('qosMaxQueue'),
             drop_policy: document.getElementById('qosDropPolicy').value.trim()
+          });
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('routesTable').addEventListener('click', async (event) => {
+        const target = event.target;
+        if (!target.classList.contains('route-delete')) {
+          return;
+        }
+        const destination = target.dataset.destination || '';
+        if (!destination) {
+          return;
+        }
+        if (!confirm('Удалить маршрут?')) {
+          return;
+        }
+        try {
+          await apiDelete('/api/routes', {
+            destination: destination,
+            gateway: target.dataset.gateway || '',
+            interface: target.dataset.interface || '',
+            metric: parseInt(target.dataset.metric || '0', 10) || 0
           });
           await refreshSettings();
         } catch (e) {
