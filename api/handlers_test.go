@@ -21,6 +21,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.yaml.in/yaml/v3"
 )
 
 func setupRouter(h *Handlers) *gin.Engine {
@@ -900,6 +901,58 @@ func TestGetHealth(t *testing.T) {
 	}
 	if !bytes.Contains(w.Body.Bytes(), []byte(`"status":"ok"`)) {
 		t.Fatalf("expected status ok in response")
+	}
+}
+
+func TestGetConfigExportJSON(t *testing.T) {
+	cfg := &config.Config{API: config.APIConfig{Address: ":9999"}}
+	h := &Handlers{
+		Routes:    routing.NewTable(nil),
+		NAT:       nat.NewTable(nil),
+		QoS:       qos.NewQueueManager(nil),
+		Metrics:   metrics.NewWithRegistry(prometheus.NewRegistry()),
+		ConfigMgr: config.NewManager(cfg, nil),
+	}
+	router := setupRouter(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config/export?format=json", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var cfgOut config.Config
+	if err := json.Unmarshal(w.Body.Bytes(), &cfgOut); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if cfgOut.API.Address != ":9999" {
+		t.Fatalf("expected api address in response")
+	}
+}
+
+func TestGetConfigExportYAML(t *testing.T) {
+	cfg := &config.Config{API: config.APIConfig{Address: ":9999"}}
+	h := &Handlers{
+		Routes:    routing.NewTable(nil),
+		NAT:       nat.NewTable(nil),
+		QoS:       qos.NewQueueManager(nil),
+		Metrics:   metrics.NewWithRegistry(prometheus.NewRegistry()),
+		ConfigMgr: config.NewManager(cfg, nil),
+	}
+	router := setupRouter(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config/export?format=yaml", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var cfgOut config.Config
+	if err := yaml.Unmarshal(w.Body.Bytes(), &cfgOut); err != nil {
+		t.Fatalf("decode yaml: %v", err)
+	}
+	if cfgOut.API.Address != ":9999" {
+		t.Fatalf("expected api address in response")
 	}
 }
 
