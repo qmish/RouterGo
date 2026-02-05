@@ -1,6 +1,9 @@
 package routing
 
-import "net"
+import (
+	"net"
+	"sync"
+)
 
 type Route struct {
 	Destination net.IPNet
@@ -10,6 +13,7 @@ type Route struct {
 }
 
 type Table struct {
+	mu     sync.Mutex
 	routes []Route
 }
 
@@ -18,16 +22,22 @@ func NewTable(routes []Route) *Table {
 }
 
 func (t *Table) Add(route Route) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.routes = append(t.routes, route)
 }
 
 func (t *Table) Routes() []Route {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	out := make([]Route, 0, len(t.routes))
 	out = append(out, t.routes...)
 	return out
 }
 
 func (t *Table) Lookup(dst net.IP) (Route, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	var (
 		best       Route
 		bestMatch  = -1
@@ -44,4 +54,10 @@ func (t *Table) Lookup(dst net.IP) (Route, bool) {
 		}
 	}
 	return best, foundMatch
+}
+
+func (t *Table) ReplaceRoutes(routes []Route) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.routes = routes
 }

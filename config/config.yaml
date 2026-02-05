@@ -118,12 +118,37 @@ security:
     client_ca_file: ""
     require_client_cert: false
 
+ha:
+  enabled: false
+  node_id: node-1
+  priority: 100
+  heartbeat_interval_seconds: 2
+  hold_seconds: 6
+  bind_addr: :5356
+  multicast_addr: 224.0.0.252:5356
+  peers:
+    - http://127.0.0.1:8080
+  state_sync_interval_seconds: 5
+  state_endpoint_path: /api/ha/state
+
 api:
   address: :8080
 
 metrics:
   address: :9090
   path: /metrics
+
+observability:
+  enabled: true
+  traces_limit: 1000
+  pprof_enabled: false
+  pprof_path: /debug/pprof
+  alerts_enabled: true
+  alerts_limit: 1000
+  alert_interval_seconds: 10
+  drops_threshold: 100
+  errors_threshold: 10
+  ids_alerts_threshold: 5
 
 logging:
   level: info

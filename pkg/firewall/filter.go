@@ -127,6 +127,18 @@ func (e *Engine) ResetStats() {
 	}
 }
 
+func (e *Engine) Replace(rules []Rule, defaults map[string]Action) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.rules = rules
+	e.hits = make([]uint64, len(rules))
+	e.defaultPolicies = map[string]Action{}
+	for k, v := range defaults {
+		e.defaultPolicies[strings.ToUpper(k)] = v
+	}
+	e.chainHits = map[string]uint64{}
+}
+
 func (e *Engine) Evaluate(chain string, pkt network.Packet) Action {
 	e.mu.Lock()
 	defer e.mu.Unlock()

@@ -11,10 +11,12 @@ import (
 	"router-go/internal/config"
 	"router-go/internal/logger"
 	"router-go/internal/metrics"
+	"router-go/internal/observability"
 	"router-go/pkg/firewall"
 	"router-go/pkg/flow"
 	"router-go/pkg/enrich"
 	"router-go/pkg/ids"
+	"router-go/pkg/ha"
 	"router-go/pkg/nat"
 	"router-go/pkg/p2p"
 	"router-go/pkg/proxy"
@@ -35,10 +37,13 @@ type Handlers struct {
 	Proxy     *proxy.Proxy
 	Enrich    *enrich.Service
 	EnrichTimeout time.Duration
+	HA        *ha.Manager
 	Security  *config.SecurityConfig
 	Log       *logger.Logger
 	ConfigMgr *config.Manager
 	Metrics   *metrics.Metrics
+	Observability *observability.Store
+	Alerts        *observability.AlertStore
 }
 
 func (h *Handlers) GetRoutes(c *gin.Context) {

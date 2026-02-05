@@ -21,8 +21,10 @@ type Config struct {
 	Proxy            ProxyConfig            `mapstructure:"proxy"`
 	Integrations     IntegrationsConfig     `mapstructure:"integrations"`
 	Security         SecurityConfig         `mapstructure:"security"`
+	HA               HAConfig               `mapstructure:"ha"`
 	API              APIConfig              `mapstructure:"api"`
 	Metrics          MetricsConfig          `mapstructure:"metrics"`
+	Observability    ObservabilityConfig    `mapstructure:"observability"`
 	Logging          LoggingConfig          `mapstructure:"logging"`
 }
 
@@ -186,6 +188,19 @@ type TLSConfig struct {
 	RequireClientCert bool `mapstructure:"require_client_cert"`
 }
 
+type HAConfig struct {
+	Enabled            bool     `mapstructure:"enabled"`
+	NodeID             string   `mapstructure:"node_id"`
+	Priority           int      `mapstructure:"priority"`
+	HeartbeatInterval  int      `mapstructure:"heartbeat_interval_seconds"`
+	HoldSeconds        int      `mapstructure:"hold_seconds"`
+	BindAddr           string   `mapstructure:"bind_addr"`
+	MulticastAddr      string   `mapstructure:"multicast_addr"`
+	Peers              []string `mapstructure:"peers"`
+	StateSyncInterval  int      `mapstructure:"state_sync_interval_seconds"`
+	StateEndpointPath  string   `mapstructure:"state_endpoint_path"`
+}
+
 type APIConfig struct {
 	Address string `mapstructure:"address"`
 }
@@ -193,6 +208,19 @@ type APIConfig struct {
 type MetricsConfig struct {
 	Address string `mapstructure:"address"`
 	Path    string `mapstructure:"path"`
+}
+
+type ObservabilityConfig struct {
+	Enabled      bool   `mapstructure:"enabled"`
+	TracesLimit  int    `mapstructure:"traces_limit"`
+	PprofEnabled bool   `mapstructure:"pprof_enabled"`
+	PprofPath    string `mapstructure:"pprof_path"`
+	AlertsEnabled       bool   `mapstructure:"alerts_enabled"`
+	AlertsLimit         int    `mapstructure:"alerts_limit"`
+	AlertIntervalSeconds int   `mapstructure:"alert_interval_seconds"`
+	DropsThreshold      uint64 `mapstructure:"drops_threshold"`
+	ErrorsThreshold     uint64 `mapstructure:"errors_threshold"`
+	IDSAlertsThreshold  uint64 `mapstructure:"ids_alerts_threshold"`
 }
 
 type LoggingConfig struct {
@@ -249,6 +277,18 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Metrics.Path == "" {
 		cfg.Metrics.Path = "/metrics"
+	}
+	if cfg.Observability.TracesLimit == 0 {
+		cfg.Observability.TracesLimit = 1000
+	}
+	if cfg.Observability.PprofPath == "" {
+		cfg.Observability.PprofPath = "/debug/pprof"
+	}
+	if cfg.Observability.AlertsLimit == 0 {
+		cfg.Observability.AlertsLimit = 1000
+	}
+	if cfg.Observability.AlertIntervalSeconds == 0 {
+		cfg.Observability.AlertIntervalSeconds = 10
 	}
 	if cfg.Logging.Level == "" {
 		cfg.Logging.Level = "info"
@@ -309,6 +349,27 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Security.RequireAuth == false && cfg.Security.Enabled {
 		cfg.Security.RequireAuth = true
+	}
+	if cfg.HA.HeartbeatInterval == 0 {
+		cfg.HA.HeartbeatInterval = 2
+	}
+	if cfg.HA.HoldSeconds == 0 {
+		cfg.HA.HoldSeconds = 6
+	}
+	if cfg.HA.BindAddr == "" {
+		cfg.HA.BindAddr = ":5356"
+	}
+	if cfg.HA.MulticastAddr == "" {
+		cfg.HA.MulticastAddr = "224.0.0.252:5356"
+	}
+	if cfg.HA.StateSyncInterval == 0 {
+		cfg.HA.StateSyncInterval = 5
+	}
+	if cfg.HA.StateEndpointPath == "" {
+		cfg.HA.StateEndpointPath = "/api/ha/state"
+	}
+	if cfg.HA.NodeID == "" {
+		cfg.HA.NodeID = "node-1"
 	}
 }
 
