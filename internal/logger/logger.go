@@ -80,11 +80,20 @@ func (l *Logger) log(level string, msg string, fields map[string]any) {
 }
 
 func shouldLog(level string, current string) bool {
-	order := map[string]int{
-		"debug": 0,
-		"info":  1,
-		"warn":  2,
-		"error": 3,
+	return levelOrder(level) >= levelOrder(current)
+}
+
+func levelOrder(level string) int {
+	switch level {
+	case "debug":
+		return 0
+	case "info":
+		return 1
+	case "warn":
+		return 2
+	case "error":
+		return 3
+	default:
+		return 0
 	}
-	return order[level] >= order[current]
 }
