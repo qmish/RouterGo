@@ -2,6 +2,8 @@ package api
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"net/http"
 	"strings"
@@ -22,12 +24,22 @@ const (
 
 func AuthMiddleware(cfg config.SecurityConfig, log *logger.Logger) gin.HandlerFunc {
 	roles := map[string]string{}
+	var hashedTokens []hashedToken
 	for _, token := range cfg.Tokens {
 		value := config.ResolveSecret(token.Value)
 		if value == "" || token.Role == "" {
 			continue
 		}
-		roles[value] = strings.ToLower(token.Role)
+		role := strings.ToLower(token.Role)
+		if strings.HasPrefix(value, "sha256:") {
+			decoded, err := hex.DecodeString(strings.TrimPrefix(value, "sha256:"))
+			if err != nil || len(decoded) == 0 {
+				continue
+			}
+			hashedTokens = append(hashedTokens, hashedToken{role: role, hash: decoded})
+			continue
+		}
+		roles[value] = role
 	}
 	return func(c *gin.Context) {
 		if !cfg.Enabled || !cfg.RequireAuth {
@@ -35,7 +47,7 @@ func AuthMiddleware(cfg config.SecurityConfig, log *logger.Logger) gin.HandlerFu
 			c.Next()
 			return
 		}
-		if len(roles) == 0 {
+		if len(roles) == 0 && len(hashedTokens) == 0 {
 			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "auth not configured"})
 			return
 		}
@@ -47,6 +59,16 @@ func AuthMiddleware(cfg config.SecurityConfig, log *logger.Logger) gin.HandlerFu
 			}
 		}
 		role, ok := roles[token]
+		if !ok && token != "" && len(hashedTokens) > 0 {
+			sum := sha256.Sum256([]byte(token))
+			for _, entry := range hashedTokens {
+				if subtle.ConstantTimeCompare(entry.hash, sum[:]) == 1 {
+					role = entry.role
+					ok = true
+					break
+				}
+			}
+		}
 		if !ok {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
@@ -152,4 +174,9 @@ func roleOrder(role string) int {
 	default:
 		return 0
 	}
+}
+
+type hashedToken struct {
+	role string
+	hash []byte
 }

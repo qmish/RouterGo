@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -108,6 +110,30 @@ func TestAuthMiddlewareBearerToken(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
 	req.Header.Set("Authorization", "Bearer token-admin")
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+}
+
+func TestAuthMiddlewareSHA256Token(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	sum := sha256.Sum256([]byte("secret-token"))
+	cfg := config.SecurityConfig{
+		Enabled:     true,
+		RequireAuth: true,
+		Tokens: []config.TokenConfig{
+			{Role: "admin", Value: "sha256:" + hex.EncodeToString(sum[:])},
+		},
+	}
+	r := gin.New()
+	r.Use(AuthMiddleware(cfg, nil))
+	r.GET("/ok", func(c *gin.Context) { c.Status(200) })
+
+	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
+	req.Header.Set("X-API-Key", "secret-token")
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
 
