@@ -207,6 +207,38 @@ func TestConnectionTrackingReverseSNAT(t *testing.T) {
 	}
 }
 
+func TestConnectionTrackingIPv6SNAT(t *testing.T) {
+	_, srcNet, _ := net.ParseCIDR("2001:db8::/32")
+	table := NewTable([]Rule{
+		{
+			Type:   TypeSNAT,
+			SrcNet: srcNet,
+			ToIP:   net.ParseIP("2001:db8::100"),
+		},
+	})
+
+	pkt := network.Packet{
+		Metadata: network.PacketMetadata{
+			Protocol: "TCP",
+			SrcIP:    net.ParseIP("2001:db8::1"),
+			DstIP:    net.ParseIP("2001:db8::200"),
+			SrcPort:  1234,
+			DstPort:  80,
+		},
+	}
+
+	out := table.Apply(pkt)
+	if out.Metadata.SrcIP.String() != "2001:db8::100" {
+		t.Fatalf("expected snat ipv6, got %s", out.Metadata.SrcIP)
+	}
+
+	table.rules = nil
+	out2 := table.Apply(pkt)
+	if out2.Metadata.SrcIP.String() != "2001:db8::100" {
+		t.Fatalf("expected tracked snat ipv6, got %s", out2.Metadata.SrcIP)
+	}
+}
+
 func TestConnectionTrackingReverseDNAT(t *testing.T) {
 	_, dstNet, _ := net.ParseCIDR("203.0.113.0/24")
 	table := NewTable([]Rule{
