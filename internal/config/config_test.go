@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestLoadFromBytesAppliesDefaults(t *testing.T) {
 	data := []byte(`
@@ -82,5 +86,33 @@ routes:
 	_, err := LoadFromBytes(data)
 	if err == nil {
 		t.Fatalf("expected error for missing route destination")
+	}
+}
+
+func TestValidateWrapper(t *testing.T) {
+	cfg := &Config{
+		Interfaces: []InterfaceConfig{{Name: "eth0", IP: "192.168.1.1/24"}},
+		Routes:     []RouteConfig{{Destination: "0.0.0.0/0", Gateway: "192.0.2.1", Interface: "eth0"}},
+	}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadFromFile(t *testing.T) {
+	data := []byte(`
+interfaces:
+  - name: eth0
+routes:
+  - destination: 0.0.0.0/0
+    gateway: 192.0.2.1
+    interface: eth0
+`)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if _, err := Load(path); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
