@@ -26,6 +26,8 @@ type Rule struct {
 	DstPort      int
 	InInterface  string
 	OutInterface string
+	chainNorm    string
+	protoNorm    string
 }
 
 type Engine struct {
@@ -38,7 +40,7 @@ type Engine struct {
 
 func NewEngine(rules []Rule) *Engine {
 	return &Engine{
-		rules:           rules,
+		rules:           normalizeRules(rules),
 		defaultPolicies: map[string]Action{},
 		hits:            make([]uint64, len(rules)),
 		chainHits:       map[string]uint64{},
@@ -51,7 +53,7 @@ func NewEngineWithDefaults(rules []Rule, defaults map[string]Action) *Engine {
 		policies[strings.ToUpper(k)] = v
 	}
 	return &Engine{
-		rules:           rules,
+		rules:           normalizeRules(rules),
 		defaultPolicies: policies,
 		hits:            make([]uint64, len(rules)),
 		chainHits:       map[string]uint64{},
@@ -61,7 +63,7 @@ func NewEngineWithDefaults(rules []Rule, defaults map[string]Action) *Engine {
 func (e *Engine) AddRule(rule Rule) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.rules = append(e.rules, rule)
+	e.rules = append(e.rules, normalizeRule(rule))
 	e.hits = append(e.hits, 0)
 }
 
@@ -130,7 +132,7 @@ func (e *Engine) ResetStats() {
 func (e *Engine) Replace(rules []Rule, defaults map[string]Action) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.rules = rules
+	e.rules = normalizeRules(rules)
 	e.hits = make([]uint64, len(rules))
 	e.defaultPolicies = map[string]Action{}
 	for k, v := range defaults {
@@ -142,14 +144,19 @@ func (e *Engine) Replace(rules []Rule, defaults map[string]Action) {
 func (e *Engine) Evaluate(chain string, pkt network.Packet) Action {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if chain != "" {
-		e.chainHits[strings.ToUpper(chain)]++
+	chainNorm := strings.ToUpper(chain)
+	if chainNorm != "" {
+		e.chainHits[chainNorm]++
+	}
+	protoNorm := strings.ToUpper(pkt.Metadata.Protocol)
+	if protoNorm == "" {
+		protoNorm = "UNKNOWN"
 	}
 	for i, rule := range e.rules {
-		if rule.Chain != "" && !strings.EqualFold(rule.Chain, chain) {
+		if rule.chainNorm != "" && rule.chainNorm != chainNorm {
 			continue
 		}
-		if rule.Protocol != "" && !strings.EqualFold(rule.Protocol, pkt.Metadata.Protocol) {
+		if rule.protoNorm != "" && rule.protoNorm != protoNorm {
 			continue
 		}
 		if rule.SrcNet != nil && pkt.Metadata.SrcIP != nil && !rule.SrcNet.Contains(pkt.Metadata.SrcIP) {
@@ -174,9 +181,23 @@ func (e *Engine) Evaluate(chain string, pkt network.Packet) Action {
 		return rule.Action
 	}
 	if e.defaultPolicies != nil {
-		if action, ok := e.defaultPolicies[strings.ToUpper(chain)]; ok {
+		if action, ok := e.defaultPolicies[chainNorm]; ok {
 			return action
 		}
 	}
 	return ActionDrop
+}
+
+func normalizeRule(rule Rule) Rule {
+	rule.chainNorm = strings.ToUpper(rule.Chain)
+	rule.protoNorm = strings.ToUpper(rule.Protocol)
+	return rule
+}
+
+func normalizeRules(rules []Rule) []Rule {
+	out := make([]Rule, 0, len(rules))
+	for _, rule := range rules {
+		out = append(out, normalizeRule(rule))
+	}
+	return out
 }
