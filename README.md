@@ -149,6 +149,14 @@ observability:
 
 При включённом `pprof_enabled` доступны профили по пути `pprof_path` (например, `/debug/pprof/`).
 
+Performance:
+
+```yaml
+performance:
+  egress_batch_size: 16
+  egress_idle_sleep_millis: 2
+```
+
 ## Примечания
 
 - Для Linux и Windows предусмотрены отдельные заглушки PacketIO; низкоуровневый захват пакетов требует прав и платформенных библиотек.

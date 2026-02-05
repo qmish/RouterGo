@@ -25,6 +25,7 @@ type Config struct {
 	API              APIConfig              `mapstructure:"api"`
 	Metrics          MetricsConfig          `mapstructure:"metrics"`
 	Observability    ObservabilityConfig    `mapstructure:"observability"`
+	Performance      PerformanceConfig      `mapstructure:"performance"`
 	Logging          LoggingConfig          `mapstructure:"logging"`
 }
 
@@ -210,6 +211,11 @@ type MetricsConfig struct {
 	Path    string `mapstructure:"path"`
 }
 
+type PerformanceConfig struct {
+	EgressBatchSize       int `mapstructure:"egress_batch_size"`
+	EgressIdleSleepMillis int `mapstructure:"egress_idle_sleep_millis"`
+}
+
 type ObservabilityConfig struct {
 	Enabled      bool   `mapstructure:"enabled"`
 	TracesLimit  int    `mapstructure:"traces_limit"`
@@ -277,6 +283,12 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Metrics.Path == "" {
 		cfg.Metrics.Path = "/metrics"
+	}
+	if cfg.Performance.EgressBatchSize == 0 {
+		cfg.Performance.EgressBatchSize = 16
+	}
+	if cfg.Performance.EgressIdleSleepMillis == 0 {
+		cfg.Performance.EgressIdleSleepMillis = 2
 	}
 	if cfg.Observability.TracesLimit == 0 {
 		cfg.Observability.TracesLimit = 1000

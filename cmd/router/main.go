@@ -154,7 +154,9 @@ func startPacketLoop(
 		return
 	}
 
-	go runEgressLoop(ctx, io, qosQueue, log, metricsSrv)
+	batchSize := cfg.Performance.EgressBatchSize
+	idleSleep := time.Duration(cfg.Performance.EgressIdleSleepMillis) * time.Millisecond
+	go runEgressLoop(ctx, io, qosQueue, log, metricsSrv, batchSize, idleSleep)
 
 	go func() {
 		defer io.Close()
@@ -233,9 +235,15 @@ func processPacket(
 	}
 }
 
-func runEgressLoop(ctx context.Context, io network.PacketIO, qosQueue *qos.QueueManager, log *logger.Logger, metricsSrv *metrics.Metrics) {
+func runEgressLoop(ctx context.Context, io network.PacketIO, qosQueue *qos.QueueManager, log *logger.Logger, metricsSrv *metrics.Metrics, batchSize int, idleSleep time.Duration) {
 	if qosQueue == nil {
 		return
+	}
+	if batchSize <= 0 {
+		batchSize = 1
+	}
+	if idleSleep <= 0 {
+		idleSleep = 2 * time.Millisecond
 	}
 	for {
 		select {
@@ -244,20 +252,22 @@ func runEgressLoop(ctx context.Context, io network.PacketIO, qosQueue *qos.Queue
 		default:
 		}
 
-		if ok := dequeueAndWrite(qosQueue, io, metricsSrv); !ok {
-			time.Sleep(2 * time.Millisecond)
+		if ok := dequeueAndWriteBatch(qosQueue, io, metricsSrv, batchSize); !ok {
+			time.Sleep(idleSleep)
 		}
 	}
 }
 
-func dequeueAndWrite(qosQueue *qos.QueueManager, io network.PacketIO, metricsSrv *metrics.Metrics) bool {
-	pkt, ok := qosQueue.Dequeue()
-	if !ok {
+func dequeueAndWriteBatch(qosQueue *qos.QueueManager, io network.PacketIO, metricsSrv *metrics.Metrics, batchSize int) bool {
+	batch := qosQueue.DequeueBatch(batchSize)
+	if len(batch) == 0 {
 		return false
 	}
-	_ = io.WritePacket(context.Background(), pkt)
-	if metricsSrv != nil {
-		metricsSrv.IncTxPackets()
+	for _, pkt := range batch {
+		_ = io.WritePacket(context.Background(), pkt)
+		if metricsSrv != nil {
+			metricsSrv.IncTxPackets()
+		}
 	}
 	return true
 }

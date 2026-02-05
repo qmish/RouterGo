@@ -138,6 +138,10 @@ metrics:
   address: :9090
   path: /metrics
 
+performance:
+  egress_batch_size: 16
+  egress_idle_sleep_millis: 2
+
 observability:
   enabled: true
   traces_limit: 1000
