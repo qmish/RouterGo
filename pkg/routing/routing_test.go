@@ -84,3 +84,16 @@ func TestLookupAfterReplaceRoutes(t *testing.T) {
 		t.Fatalf("expected eth1, got %s", route.Interface)
 	}
 }
+
+func TestRoutesReturnsCopy(t *testing.T) {
+	_, aNet, _ := net.ParseCIDR("10.0.0.0/8")
+	table := NewTable([]Route{{Destination: *aNet, Interface: "eth0"}})
+
+	routes := table.Routes()
+	routes[0].Interface = "eth1"
+
+	routes2 := table.Routes()
+	if routes2[0].Interface != "eth0" {
+		t.Fatalf("expected original routes unchanged, got %s", routes2[0].Interface)
+	}
+}

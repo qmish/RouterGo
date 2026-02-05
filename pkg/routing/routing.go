@@ -13,7 +13,7 @@ type Route struct {
 }
 
 type Table struct {
-	mu     sync.Mutex
+	mu     sync.RWMutex
 	routes []Route
 	sorted []Route
 }
@@ -32,16 +32,16 @@ func (t *Table) Add(route Route) {
 }
 
 func (t *Table) Routes() []Route {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	out := make([]Route, 0, len(t.routes))
 	out = append(out, t.routes...)
 	return out
 }
 
 func (t *Table) Lookup(dst net.IP) (Route, bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	for _, route := range t.sorted {
 		if route.Destination.Contains(dst) {
 			return route, true
