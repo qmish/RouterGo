@@ -1,0 +1,94 @@
+package presets
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"router-go/internal/config"
+)
+
+func TestLoadStoreListAndGet(t *testing.T) {
+	dir := t.TempDir()
+	writePreset(t, dir, "home.json", `{
+  "id": "home",
+  "name": "Домашний роутер",
+  "description": "Тестовый пресет",
+  "settings": {
+    "routes": [
+      {"destination": "0.0.0.0/0", "gateway": "192.0.2.1", "interface": "eth0", "metric": 10}
+    ]
+  }
+}`)
+
+	store, err := LoadStore(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	list := store.List()
+	if len(list) != 1 {
+		t.Fatalf("expected 1 preset, got %d", len(list))
+	}
+	if list[0].ID != "home" {
+		t.Fatalf("expected id home, got %q", list[0].ID)
+	}
+	_, ok := store.Get("home")
+	if !ok {
+		t.Fatalf("expected preset home to exist")
+	}
+}
+
+func TestLoadStoreInvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	writePreset(t, dir, "broken.json", `{`)
+
+	_, err := LoadStore(dir)
+	if err == nil {
+		t.Fatalf("expected error for invalid json")
+	}
+}
+
+func TestApplyPresetUpdatesConfig(t *testing.T) {
+	base := &config.Config{
+		Interfaces: []config.InterfaceConfig{
+			{Name: "eth0", IP: "192.168.1.1/24"},
+		},
+		Routes: []config.RouteConfig{
+			{Destination: "0.0.0.0/0", Gateway: "192.0.2.1", Interface: "eth0", Metric: 100},
+		},
+	}
+	preset := Preset{
+		ID:   "home",
+		Name: "Дом",
+		Settings: PresetSettings{
+			Firewall: []config.FirewallRuleConfig{
+				{Chain: "INPUT", Action: "ACCEPT", Protocol: "ICMP"},
+			},
+			NAT: []config.NATRuleConfig{
+				{Type: "SNAT", SrcIP: "192.168.1.0/24", ToIP: "203.0.113.10"},
+			},
+		},
+	}
+
+	updated, summary, err := ApplyPreset(base, preset)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if summary.FirewallRulesAfter != 1 || summary.NATRulesAfter != 1 {
+		t.Fatalf("expected firewall/nat counts to be updated")
+	}
+	if len(updated.Firewall) != 1 {
+		t.Fatalf("expected firewall rules applied")
+	}
+	if len(updated.NAT) != 1 {
+		t.Fatalf("expected nat rules applied")
+	}
+}
+
+func writePreset(t *testing.T, dir string, name string, content string) {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write preset: %v", err)
+	}
+}

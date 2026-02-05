@@ -1,0 +1,44 @@
+{
+  "id": "large-office",
+  "name": "Большой офис (70–100 мест)",
+  "description": "Сегментация, приоритизация и мониторинг для среднего офиса.",
+  "icon": "🏬",
+  "settings": {
+    "interfaces": [
+      { "name": "eth0", "ip": "192.168.100.1/24" }
+    ],
+    "routes": [
+      { "destination": "0.0.0.0/0", "gateway": "192.168.100.254", "interface": "eth0", "metric": 100 }
+    ],
+    "firewall_defaults": { "input": "DROP", "output": "ACCEPT", "forward": "DROP" },
+    "firewall": [
+      { "chain": "INPUT", "action": "ACCEPT", "protocol": "TCP", "dst_port": 443 },
+      { "chain": "INPUT", "action": "ACCEPT", "protocol": "UDP", "dst_port": 1194 }
+    ],
+    "nat": [
+      { "type": "DNAT", "dst_port": 443, "to_ip": "192.168.100.10", "to_port": 443 },
+      { "type": "DNAT", "dst_port": 8443, "to_ip": "192.168.100.11", "to_port": 8443 }
+    ],
+    "qos": [
+      { "name": "voice", "protocol": "UDP", "dst_port": 5060, "rate_limit_kbps": 1024, "priority": 10, "max_queue": 200, "drop_policy": "tail" },
+      { "name": "video", "protocol": "UDP", "dst_port": 3478, "rate_limit_kbps": 4096, "priority": 8, "max_queue": 300, "drop_policy": "tail" },
+      { "name": "data", "protocol": "TCP", "dst_port": 443, "rate_limit_kbps": 8192, "priority": 6, "max_queue": 400, "drop_policy": "tail" }
+    ],
+    "ids": {
+      "enabled": true,
+      "window_seconds": 10,
+      "rate_threshold": 300,
+      "portscan_threshold": 30,
+      "unique_dst_threshold": 15,
+      "behavior_action": "ALERT",
+      "alert_limit": 2000
+    }
+  },
+  "extras": {
+    "wan": "МультиWAN (2–3 канала)",
+    "lan": "VLAN: бухгалтерия/ИТ/гости",
+    "dhcp": "Пулы с резервированием IP для серверов",
+    "monitoring": "Экспорт метрик в Prometheus, графики каналов",
+    "security": "Интеграция с AD, API ключи для автоматизации"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "id": "small-office",
+  "name": "Небольшой офис (8–10 мест)",
+  "description": "Базовые правила для малого бизнеса.",
+  "icon": "🏢",
+  "settings": {
+    "interfaces": [
+      { "name": "eth0", "ip": "192.168.10.1/24" }
+    ],
+    "routes": [
+      { "destination": "0.0.0.0/0", "gateway": "192.168.10.254", "interface": "eth0", "metric": 100 }
+    ],
+    "firewall_defaults": { "input": "DROP", "output": "ACCEPT", "forward": "DROP" },
+    "firewall": [
+      { "chain": "INPUT", "action": "ACCEPT", "protocol": "TCP", "dst_port": 25 },
+      { "chain": "INPUT", "action": "ACCEPT", "protocol": "TCP", "dst_port": 143 },
+      { "chain": "INPUT", "action": "ACCEPT", "protocol": "TCP", "dst_port": 993 },
+      { "chain": "INPUT", "action": "ACCEPT", "protocol": "UDP", "dst_port": 1194 },
+      { "chain": "INPUT", "action": "ACCEPT", "protocol": "UDP", "dst_port": 51820 }
+    ],
+    "nat": [
+      { "type": "SNAT", "src_ip": "192.168.10.0/24", "to_ip": "203.0.113.20" },
+      { "type": "DNAT", "dst_port": 8080, "to_ip": "192.168.10.10", "to_port": 80 }
+    ],
+    "qos": [
+      { "name": "crm", "protocol": "TCP", "dst_port": 443, "rate_limit_kbps": 2048, "priority": 8, "max_queue": 200, "drop_policy": "tail" },
+      { "name": "office_dns", "protocol": "UDP", "dst_port": 53, "rate_limit_kbps": 512, "priority": 6, "max_queue": 100, "drop_policy": "tail" }
+    ]
+  },
+  "extras": {
+    "wan": "DHCP или статический IP, резервный канал",
+    "lan": "192.168.10.0/24, DHCP 192.168.10.10-20",
+    "vlan": "Гостевой WiFi 192.168.20.0/24",
+    "logging": "Firewall в файл",
+    "backups": "Расписание бэкапов конфигурации",
+    "options": ["Шаблон удалённого доступа (2FA для VPN)", "Email оповещения"]
+  }
+}

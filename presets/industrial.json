@@ -1,0 +1,30 @@
+{
+  "id": "industrial",
+  "name": "Производственное предприятие",
+  "description": "Сегментация цехов и приоритет SCADA трафика.",
+  "icon": "🏭",
+  "settings": {
+    "interfaces": [
+      { "name": "eth0", "ip": "10.0.0.1/16" }
+    ],
+    "firewall_defaults": { "input": "DROP", "output": "ACCEPT", "forward": "DROP" },
+    "firewall": [
+      { "chain": "INPUT", "action": "ACCEPT", "protocol": "TCP", "dst_port": 502 },
+      { "chain": "INPUT", "action": "ACCEPT", "protocol": "TCP", "dst_port": 34962 },
+      { "chain": "INPUT", "action": "ACCEPT", "protocol": "TCP", "dst_port": 34963 },
+      { "chain": "INPUT", "action": "ACCEPT", "protocol": "UDP", "dst_port": 1194 },
+      { "chain": "INPUT", "action": "ACCEPT", "protocol": "UDP", "dst_port": 51820 }
+    ],
+    "qos": [
+      { "name": "scada", "protocol": "TCP", "dst_port": 502, "rate_limit_kbps": 2048, "priority": 10, "max_queue": 200, "drop_policy": "tail" },
+      { "name": "video", "protocol": "TCP", "dst_port": 554, "rate_limit_kbps": 2048, "priority": 4, "max_queue": 300, "drop_policy": "tail" }
+    ]
+  },
+  "extras": {
+    "wan": "Резервирование через 4G/5G модем",
+    "lan": "Сегментация по цехам/складам /24",
+    "logging": "Детальные журналы 90 дней + SIEM (Syslog)",
+    "security": "Отключение Telnet/FTP, регулярные проверки уязвимостей",
+    "options": ["Режим авиарежима (отключение WAN)", "Кнопка аварийного отключения интерфейсов"]
+  }
+}
