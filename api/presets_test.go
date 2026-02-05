@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"router-go/internal/config"
@@ -49,6 +50,28 @@ func TestPreviewPreset(t *testing.T) {
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+}
+
+func TestCreatePreset(t *testing.T) {
+	store := setupPresetStore(t)
+	h := &Handlers{
+		Presets: store,
+	}
+	router := gin.New()
+	RegisterRoutes(router, h)
+
+	body := `{"id":"custom","name":"Custom","settings":{"firewall":[{"chain":"INPUT","action":"ACCEPT","protocol":"ICMP"}]}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/presets", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", rr.Code)
+	}
+	if _, ok := store.Get("custom"); !ok {
+		t.Fatalf("expected preset to be saved")
 	}
 }
 
