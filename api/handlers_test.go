@@ -7,9 +7,11 @@ import (
 	"net/http/httptest"
 	"net"
 	"testing"
+	"time"
 
 	"router-go/internal/metrics"
 	"router-go/pkg/ids"
+	"router-go/pkg/ha"
 	"router-go/pkg/firewall"
 	"router-go/pkg/nat"
 	"router-go/pkg/network"
@@ -337,5 +339,187 @@ func TestResetIDS(t *testing.T) {
 	}
 	if len(engine.Alerts()) != 0 {
 		t.Fatalf("expected alerts cleared")
+	}
+}
+
+func TestGetHAStatus(t *testing.T) {
+	manager := ha.NewManager("node-1", 100, time.Second, time.Second, ":0", "224.0.0.252:5356", nil, "/api/ha/state", time.Second, nil, nil)
+	h := &Handlers{
+		HA: manager,
+	}
+	router := setupRouter(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ha/status", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte(`"node_id":"node-1"`)) {
+		t.Fatalf("expected node_id in response")
+	}
+}
+
+func TestGetHAState(t *testing.T) {
+	_, srcNet, _ := net.ParseCIDR("10.0.0.0/8")
+	_, dstNet, _ := net.ParseCIDR("192.168.0.0/16")
+	fw := firewall.NewEngineWithDefaults([]firewall.Rule{
+		{
+			Chain:    "INPUT",
+			Action:   firewall.ActionAccept,
+			Protocol: "TCP",
+			SrcNet:   srcNet,
+			DstNet:   dstNet,
+			DstPort:  22,
+		},
+	}, map[string]firewall.Action{"INPUT": firewall.ActionDrop})
+	natTable := nat.NewTable([]nat.Rule{
+		{
+			Type:   nat.TypeSNAT,
+			SrcNet: srcNet,
+			ToIP:   net.ParseIP("203.0.113.10"),
+		},
+	})
+	qosQueue := qos.NewQueueManager([]qos.Class{
+		{
+			Name:          "voice",
+			Protocol:      "UDP",
+			DstPort:       5060,
+			RateLimitKbps: 512,
+			Priority:      10,
+		},
+	})
+	routes := routing.NewTable(nil)
+	_, dst, _ := net.ParseCIDR("0.0.0.0/0")
+	routes.Add(routing.Route{
+		Destination: *dst,
+		Gateway:     net.ParseIP("192.168.1.254"),
+		Interface:   "eth0",
+		Metric:      100,
+	})
+	manager := ha.NewManager("node-1", 100, time.Second, time.Second, ":0", "224.0.0.252:5356", nil, "/api/ha/state", time.Second, nil, nil)
+	h := &Handlers{
+		HA:       manager,
+		Firewall: fw,
+		NAT:      natTable,
+		QoS:      qosQueue,
+		Routes:   routes,
+	}
+	router := setupRouter(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ha/state", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var state ha.State
+	if err := json.Unmarshal(w.Body.Bytes(), &state); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	if len(state.FirewallRules) != 1 || len(state.NATRules) != 1 || len(state.QoSClasses) == 0 || len(state.Routes) != 1 {
+		t.Fatalf("unexpected state sizes: fw=%d nat=%d qos=%d routes=%d", len(state.FirewallRules), len(state.NATRules), len(state.QoSClasses), len(state.Routes))
+	}
+	if state.FirewallDefaults["INPUT"] != "DROP" {
+		t.Fatalf("expected firewall default INPUT=DROP")
+	}
+	foundVoice := false
+	for _, class := range state.QoSClasses {
+		if class.Name == "voice" {
+			foundVoice = true
+			break
+		}
+	}
+	if !foundVoice {
+		t.Fatalf("expected voice class in QoS state")
+	}
+}
+
+func TestApplyHAState(t *testing.T) {
+	fw := firewall.NewEngine(nil)
+	natTable := nat.NewTable(nil)
+	qosQueue := qos.NewQueueManager(nil)
+	routes := routing.NewTable(nil)
+
+	applyCalled := false
+	manager := ha.NewManager("node-1", 100, time.Second, time.Second, ":0", "224.0.0.252:5356", nil, "/api/ha/state", time.Second, nil, func(state ha.State) {
+		applyCalled = true
+	})
+	h := &Handlers{
+		HA:       manager,
+		Firewall: fw,
+		NAT:      natTable,
+		QoS:      qosQueue,
+		Routes:   routes,
+	}
+	router := setupRouter(h)
+
+	state := ha.State{
+		FirewallDefaults: map[string]string{"INPUT": "DROP"},
+		FirewallRules: []ha.FirewallRule{
+			{
+				Chain:    "INPUT",
+				Action:   "ACCEPT",
+				Protocol: "TCP",
+				SrcCIDR:  "10.0.0.0/8",
+				DstCIDR:  "192.168.0.0/16",
+				DstPort:  22,
+			},
+		},
+		NATRules: []ha.NATRule{
+			{
+				Type:   "SNAT",
+				SrcCIDR:"10.0.0.0/8",
+				ToIP:   "203.0.113.10",
+			},
+		},
+		QoSClasses: []ha.QoSClass{
+			{
+				Name:          "voice",
+				Protocol:      "UDP",
+				DstPort:       5060,
+				RateLimitKbps: 512,
+				Priority:      10,
+			},
+		},
+		Routes: []ha.Route{
+			{
+				Destination: "0.0.0.0/0",
+				Gateway:     "192.168.1.254",
+				Interface:   "eth0",
+				Metric:      100,
+			},
+		},
+	}
+	body, _ := json.Marshal(state)
+	req := httptest.NewRequest(http.MethodPost, "/api/ha/state", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !applyCalled {
+		t.Fatalf("expected manager ApplyState to be called")
+	}
+	if len(fw.Rules()) != 1 || fw.DefaultPolicies()["INPUT"] != firewall.ActionDrop {
+		t.Fatalf("expected firewall rules/defaults applied")
+	}
+	if len(natTable.Rules()) != 1 {
+		t.Fatalf("expected nat rules applied")
+	}
+	foundVoice := false
+	for _, class := range qosQueue.Classes() {
+		if class.Name == "voice" {
+			foundVoice = true
+			break
+		}
+	}
+	if !foundVoice {
+		t.Fatalf("expected qos class voice applied")
+	}
+	if len(routes.Routes()) != 1 {
+		t.Fatalf("expected routes applied")
 	}
 }
