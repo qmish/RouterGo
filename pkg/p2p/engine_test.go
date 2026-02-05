@@ -1,6 +1,8 @@
 package p2p
 
 import (
+	"bytes"
+	"context"
 	"crypto/ed25519"
 	"encoding/json"
 	"testing"
@@ -140,5 +142,56 @@ func TestReplayRejected(t *testing.T) {
 	_ = engine.handleMessage(data, "1.2.3.4")
 	if len(engine.Peers()) != 1 {
 		t.Fatalf("expected peer added once")
+	}
+}
+
+type mockTransport struct {
+	sent [][]byte
+}
+
+func (m *mockTransport) Send(data []byte) error {
+	m.sent = append(m.sent, append([]byte(nil), data...))
+	return nil
+}
+
+func (m *mockTransport) Receive(ctx context.Context) ([]byte, string, error) {
+	return nil, "", ctx.Err()
+}
+
+func (m *mockTransport) Close() error {
+	return nil
+}
+
+func TestNextSeqIncrements(t *testing.T) {
+	engine := NewEngine(Config{PeerID: "node-1"}, routing.NewTable(nil), nil, nil, nil)
+	if seq := engine.nextSeq(); seq != 1 {
+		t.Fatalf("expected seq 1, got %d", seq)
+	}
+	if seq := engine.nextSeq(); seq != 2 {
+		t.Fatalf("expected seq 2, got %d", seq)
+	}
+}
+
+func TestSendMessageUsesTransport(t *testing.T) {
+	mt := &mockTransport{}
+	engine := NewEngine(Config{PeerID: "node-1"}, routing.NewTable(nil), mt, nil, nil)
+	if err := engine.sendMessage(message{Type: "HELLO", PeerID: "node-1"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(mt.sent) != 1 {
+		t.Fatalf("expected one message sent")
+	}
+	if !bytes.Contains(mt.sent[0], []byte(`"HELLO"`)) {
+		t.Fatalf("expected HELLO message payload")
+	}
+}
+
+func TestStartUsesExistingTransport(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	mt := &mockTransport{}
+	engine := NewEngine(Config{PeerID: "node-1"}, routing.NewTable(nil), mt, nil, nil)
+	if err := engine.Start(ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
