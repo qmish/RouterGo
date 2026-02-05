@@ -111,6 +111,15 @@ func validatePresetSettings(settings PresetSettings) error {
 		}
 	}
 	for i, rule := range settings.Firewall {
+		if rule.Protocol != "" && !validProtocol(rule.Protocol) {
+			return fmt.Errorf("firewall[%d].protocol invalid", i)
+		}
+		if rule.SrcPort < 0 || rule.SrcPort > 65535 {
+			return fmt.Errorf("firewall[%d].src_port invalid", i)
+		}
+		if rule.DstPort < 0 || rule.DstPort > 65535 {
+			return fmt.Errorf("firewall[%d].dst_port invalid", i)
+		}
 		if rule.SrcIP != "" {
 			if _, _, err := net.ParseCIDR(strings.TrimSpace(rule.SrcIP)); err != nil {
 				return fmt.Errorf("firewall[%d].src_ip invalid", i)
@@ -123,6 +132,15 @@ func validatePresetSettings(settings PresetSettings) error {
 		}
 	}
 	for i, rule := range settings.NAT {
+		if rule.SrcPort < 0 || rule.SrcPort > 65535 {
+			return fmt.Errorf("nat[%d].src_port invalid", i)
+		}
+		if rule.DstPort < 0 || rule.DstPort > 65535 {
+			return fmt.Errorf("nat[%d].dst_port invalid", i)
+		}
+		if rule.ToPort < 0 || rule.ToPort > 65535 {
+			return fmt.Errorf("nat[%d].to_port invalid", i)
+		}
 		if rule.SrcIP != "" {
 			if _, _, err := net.ParseCIDR(strings.TrimSpace(rule.SrcIP)); err != nil {
 				return fmt.Errorf("nat[%d].src_ip invalid", i)
@@ -137,5 +155,25 @@ func validatePresetSettings(settings PresetSettings) error {
 			return fmt.Errorf("nat[%d].to_ip invalid", i)
 		}
 	}
+	for i, class := range settings.QoS {
+		if class.Protocol != "" && !validProtocol(class.Protocol) {
+			return fmt.Errorf("qos[%d].protocol invalid", i)
+		}
+		if class.SrcPort < 0 || class.SrcPort > 65535 {
+			return fmt.Errorf("qos[%d].src_port invalid", i)
+		}
+		if class.DstPort < 0 || class.DstPort > 65535 {
+			return fmt.Errorf("qos[%d].dst_port invalid", i)
+		}
+	}
 	return nil
+}
+
+func validProtocol(value string) bool {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "TCP", "UDP", "ICMP":
+		return true
+	default:
+		return false
+	}
 }

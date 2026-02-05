@@ -112,6 +112,56 @@ func TestApplyPresetInvalidCIDR(t *testing.T) {
 	}
 }
 
+func TestApplyPresetInvalidPorts(t *testing.T) {
+	base := &config.Config{
+		Interfaces: []config.InterfaceConfig{
+			{Name: "eth0", IP: "192.168.1.1/24"},
+		},
+		Routes: []config.RouteConfig{
+			{Destination: "0.0.0.0/0", Gateway: "192.0.2.1", Interface: "eth0", Metric: 100},
+		},
+	}
+	preset := Preset{
+		ID:   "bad-ports",
+		Name: "Bad Ports",
+		Settings: PresetSettings{
+			Firewall: []config.FirewallRuleConfig{
+				{Chain: "INPUT", Action: "ACCEPT", Protocol: "TCP", DstPort: 70000},
+			},
+		},
+	}
+
+	_, _, err := ApplyPreset(base, preset)
+	if err == nil {
+		t.Fatalf("expected error for invalid port")
+	}
+}
+
+func TestApplyPresetInvalidProtocol(t *testing.T) {
+	base := &config.Config{
+		Interfaces: []config.InterfaceConfig{
+			{Name: "eth0", IP: "192.168.1.1/24"},
+		},
+		Routes: []config.RouteConfig{
+			{Destination: "0.0.0.0/0", Gateway: "192.0.2.1", Interface: "eth0", Metric: 100},
+		},
+	}
+	preset := Preset{
+		ID:   "bad-proto",
+		Name: "Bad Proto",
+		Settings: PresetSettings{
+			QoS: []config.QoSClassConfig{
+				{Name: "x", Protocol: "SCTP", DstPort: 443},
+			},
+		},
+	}
+
+	_, _, err := ApplyPreset(base, preset)
+	if err == nil {
+		t.Fatalf("expected error for invalid protocol")
+	}
+}
+
 func TestStoreSavePreset(t *testing.T) {
 	dir := t.TempDir()
 	store, err := LoadStore(dir)
