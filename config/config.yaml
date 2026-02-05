@@ -166,3 +166,4 @@ logging:
 
 presets:
   dir: presets
+  update_url: ""

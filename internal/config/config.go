@@ -237,7 +237,8 @@ type LoggingConfig struct {
 }
 
 type PresetsConfig struct {
-	Dir string `mapstructure:"dir"`
+	Dir       string `mapstructure:"dir"`
+	UpdateURL string `mapstructure:"update_url"`
 }
 
 func Load(path string) (*Config, error) {
