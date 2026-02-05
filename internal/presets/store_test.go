@@ -87,6 +87,31 @@ func TestApplyPresetUpdatesConfig(t *testing.T) {
 	}
 }
 
+func TestApplyPresetInvalidCIDR(t *testing.T) {
+	base := &config.Config{
+		Interfaces: []config.InterfaceConfig{
+			{Name: "eth0", IP: "192.168.1.1/24"},
+		},
+		Routes: []config.RouteConfig{
+			{Destination: "0.0.0.0/0", Gateway: "192.0.2.1", Interface: "eth0", Metric: 100},
+		},
+	}
+	preset := Preset{
+		ID:   "bad",
+		Name: "Bad",
+		Settings: PresetSettings{
+			Firewall: []config.FirewallRuleConfig{
+				{Chain: "INPUT", Action: "ACCEPT", SrcIP: "not-cidr"},
+			},
+		},
+	}
+
+	_, _, err := ApplyPreset(base, preset)
+	if err == nil {
+		t.Fatalf("expected error for invalid cidr")
+	}
+}
+
 func TestStoreSavePreset(t *testing.T) {
 	dir := t.TempDir()
 	store, err := LoadStore(dir)

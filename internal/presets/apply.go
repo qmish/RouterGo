@@ -3,6 +3,8 @@ package presets
 import (
 	"encoding/json"
 	"fmt"
+	"net"
+	"strings"
 
 	"router-go/internal/config"
 )
@@ -21,6 +23,9 @@ type ApplySummary struct {
 func ApplyPreset(base *config.Config, preset Preset) (*config.Config, ApplySummary, error) {
 	if base == nil {
 		return nil, ApplySummary{}, fmt.Errorf("base config is nil")
+	}
+	if err := validatePresetSettings(preset.Settings); err != nil {
+		return nil, ApplySummary{}, err
 	}
 	next, err := cloneConfig(base)
 	if err != nil {
@@ -76,4 +81,61 @@ func cloneConfig(cfg *config.Config) (*config.Config, error) {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 	return &cloned, nil
+}
+
+func validatePresetSettings(settings PresetSettings) error {
+	for i, iface := range settings.Interfaces {
+		if iface.Name == "" {
+			return fmt.Errorf("interfaces[%d].name is required", i)
+		}
+		if iface.IP != "" {
+			if _, _, err := net.ParseCIDR(strings.TrimSpace(iface.IP)); err != nil {
+				return fmt.Errorf("interfaces[%d].ip invalid", i)
+			}
+		}
+	}
+	for i, route := range settings.Routes {
+		if strings.TrimSpace(route.Destination) == "" {
+			return fmt.Errorf("routes[%d].destination is required", i)
+		}
+		if _, _, err := net.ParseCIDR(strings.TrimSpace(route.Destination)); err != nil {
+			return fmt.Errorf("routes[%d].destination invalid", i)
+		}
+		if gw := strings.TrimSpace(route.Gateway); gw != "" {
+			if net.ParseIP(gw) == nil {
+				return fmt.Errorf("routes[%d].gateway invalid", i)
+			}
+		}
+		if strings.TrimSpace(route.Interface) == "" {
+			return fmt.Errorf("routes[%d].interface is required", i)
+		}
+	}
+	for i, rule := range settings.Firewall {
+		if rule.SrcIP != "" {
+			if _, _, err := net.ParseCIDR(strings.TrimSpace(rule.SrcIP)); err != nil {
+				return fmt.Errorf("firewall[%d].src_ip invalid", i)
+			}
+		}
+		if rule.DstIP != "" {
+			if _, _, err := net.ParseCIDR(strings.TrimSpace(rule.DstIP)); err != nil {
+				return fmt.Errorf("firewall[%d].dst_ip invalid", i)
+			}
+		}
+	}
+	for i, rule := range settings.NAT {
+		if rule.SrcIP != "" {
+			if _, _, err := net.ParseCIDR(strings.TrimSpace(rule.SrcIP)); err != nil {
+				return fmt.Errorf("nat[%d].src_ip invalid", i)
+			}
+		}
+		if rule.DstIP != "" {
+			if _, _, err := net.ParseCIDR(strings.TrimSpace(rule.DstIP)); err != nil {
+				return fmt.Errorf("nat[%d].dst_ip invalid", i)
+			}
+		}
+		if rule.ToIP != "" && net.ParseIP(strings.TrimSpace(rule.ToIP)) == nil {
+			return fmt.Errorf("nat[%d].to_ip invalid", i)
+		}
+	}
+	return nil
 }
