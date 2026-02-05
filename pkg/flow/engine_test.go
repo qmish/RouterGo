@@ -74,3 +74,23 @@ func TestTopBandwidthIPv4Formatting(t *testing.T) {
 		t.Fatalf("unexpected src ip format: %s", top[0].SrcIP)
 	}
 }
+
+func TestSessionsTreeIPv6Formatting(t *testing.T) {
+	engine := NewEngine()
+	engine.AddPacket(network.Packet{
+		Metadata: network.PacketMetadata{
+			SrcIP:  net.ParseIP("2001:db8::1"),
+			DstIP:  net.ParseIP("2001:db8::2"),
+			Length: 128,
+		},
+	})
+
+	tree := engine.SessionsTree()
+	sessions := tree["2001:db8::1"]
+	if len(sessions) != 1 {
+		t.Fatalf("expected one destination")
+	}
+	if sessions[0].DstIP != "2001:db8::2" {
+		t.Fatalf("unexpected dst ip format: %s", sessions[0].DstIP)
+	}
+}

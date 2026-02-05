@@ -19,16 +19,21 @@ type SessionEntry struct {
 	Bytes   uint64 `json:"bytes"`
 }
 
+type sessionStats struct {
+	Packets uint64
+	Bytes   uint64
+}
+
 type Engine struct {
 	mu       sync.RWMutex
 	bySrc    map[ipKey]uint64
-	sessions map[ipKey]map[ipKey]*SessionEntry
+	sessions map[ipKey]map[ipKey]*sessionStats
 }
 
 func NewEngine() *Engine {
 	return &Engine{
 		bySrc:    map[ipKey]uint64{},
-		sessions: map[ipKey]map[ipKey]*SessionEntry{},
+		sessions: map[ipKey]map[ipKey]*sessionStats{},
 	}
 }
 
@@ -44,11 +49,11 @@ func (e *Engine) AddPacket(pkt network.Packet) {
 	defer e.mu.Unlock()
 	e.bySrc[srcKey] += size
 	if _, ok := e.sessions[srcKey]; !ok {
-		e.sessions[srcKey] = map[ipKey]*SessionEntry{}
+		e.sessions[srcKey] = map[ipKey]*sessionStats{}
 	}
 	entry := e.sessions[srcKey][dstKey]
 	if entry == nil {
-		entry = &SessionEntry{DstIP: keyToString(dstKey)}
+		entry = &sessionStats{}
 		e.sessions[srcKey][dstKey] = entry
 	}
 	entry.Packets++
@@ -77,8 +82,12 @@ func (e *Engine) SessionsTree() map[string][]SessionEntry {
 	out := make(map[string][]SessionEntry, len(e.sessions))
 	for srcKey, dsts := range e.sessions {
 		list := make([]SessionEntry, 0, len(dsts))
-		for _, entry := range dsts {
-			list = append(list, *entry)
+		for dstKey, entry := range dsts {
+			list = append(list, SessionEntry{
+				DstIP:   keyToString(dstKey),
+				Packets: entry.Packets,
+				Bytes:   entry.Bytes,
+			})
 		}
 		sort.Slice(list, func(i, j int) bool {
 			return list[i].Bytes > list[j].Bytes
