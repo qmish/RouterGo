@@ -9,6 +9,30 @@ import (
 	"router-go/pkg/routing"
 )
 
+func TestEngineReset(t *testing.T) {
+	table := routing.NewTable(nil)
+	engine := NewEngine(Config{PeerID: "node-1"}, table, nil, nil, nil)
+
+	engine.peers["node-2"] = Peer{ID: "node-2", Addr: "127.0.0.1:10000", LastSeen: time.Now()}
+	engine.routes = []routing.Route{{Interface: "eth0"}}
+	engine.routeSet["r1"] = struct{}{}
+	engine.replayGuard["node-2"] = map[uint64]struct{}{1: {}}
+
+	engine.Reset()
+	if len(engine.peers) != 0 {
+		t.Fatalf("expected peers cleared")
+	}
+	if len(engine.routes) != 0 {
+		t.Fatalf("expected routes cleared")
+	}
+	if len(engine.routeSet) != 0 {
+		t.Fatalf("expected route set cleared")
+	}
+	if len(engine.replayGuard) != 0 {
+		t.Fatalf("expected replay guard cleared")
+	}
+}
+
 func TestHandleHelloAddsPeer(t *testing.T) {
 	table := routing.NewTable(nil)
 	peerCount := 0
