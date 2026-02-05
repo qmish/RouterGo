@@ -65,6 +65,81 @@ go build -o p2pkeygen cmd/p2pkeygen/main.go
 - `GET /api/observability/alerts` — последние алерты
 - `GET /api/stats` — базовая статистика (rx/tx/пакеты/байты/ошибки/дропы/причины/классы QoS/конфиг/p2p/proxy)
 
+## План: раздел настроек UI
+
+Архитектура:
+- Главное меню: «Настройки» → {категория}
+- Каждая категория — отдельная страница с кратким описанием, панелью действий (Сохранить, Отменить, Справка) и поиском по параметрам.
+
+### 1) Интерфейсы
+- URL: `/settings/interfaces`
+- Таблица: Имя, Статус (Up/Down), IP/маска, MAC, Скорость, Тип (WAN/LAN/Guest/VPN)
+- Кнопки: Включить/Отключить, Редактировать (модалка), Добавить интерфейс
+- Форма: IP/маска, DHCP клиент, VLAN ID, MTU (1500), Описание
+
+### 2) Маршрутизация
+- URL: `/settings/routing`
+- Статические маршруты: Destination, Gateway, Interface, Metric, Comment; Добавить/Удалить
+- Динамическая маршрутизация: OSPF/BGP/RIP, AS Number, Router ID
+- Политики маршрутизации: правила по источнику/назначению/протоколу/порту → таблица маршрутизации X
+- Форма маршрута: Destination, Gateway, Interface, Metric, Comment
+
+### 3) Firewall
+- URL: `/settings/firewall`
+- Вкладки: Зоны (WAN/LAN/Guest), Правила, Цепочки (INPUT/FORWARD/OUTPUT)
+- Правила: Zone, Protocol, Port, Source, Destination, Action, Status + фильтры
+- Форма: Зона, Протокол (TCP/UDP/ICMP/ALL), Порт/диапазон, Источник, Назначение, Action (ACCEPT/DROP/REJECT/LOG), Статус, Комментарий
+
+### 4) NAT
+- URL: `/settings/nat`
+- Подразделы: SNAT, DNAT, Masquerade
+- SNAT: Interface, Source, Translation IP, Comment; Добавить SNAT
+- DNAT: Interface, Destination Port, Translation IP:Port, Protocol, Comment; Добавить DNAT
+- Masquerade: чекбокс на интерфейсе
+- Формы SNAT/DNAT: интерфейс, источник/порт, перевод в IP или IP:Port, протокол, комментарий
+
+### 5) VPN
+- URL: `/settings/vpn`
+- Site-to-Site (IPsec/WireGuard): Name, Local Subnet, Remote Subnet, Status; Добавить/Скачать конфиг
+- Remote Access (OpenVPN/WireGuard): User, Protocol, IP, Connected Since; Добавить пользователя/Сертификат
+- Client VPN: подключение к внешнему VPN (.ovpn/.conf)
+- Формы: туннель (подсети, ключи, endpoint), remote access (пользователь, пароль, сертификат, разрешенные подсети)
+
+### 6) DHCP
+- URL: `/settings/dhcp`
+- Серверы: Interface, Range, Lease Time, DNS Servers; Добавить
+- Резервации: MAC, IP, Hostname, Comment; Добавить
+- Опции: Router, DNS, Domain Name
+- Формы: диапазон, время аренды, DNS, домен, резервации по MAC
+
+### 7) QoS
+- URL: `/settings/qos`
+- Классы: Name, Priority, Bandwidth Limit, DSCP; Добавить
+- Правила классификации: Source, Destination, Protocol, Port, Class; Добавить
+- Очереди: визуальный график распределения полосы
+- Формы: класс (приоритет, лимит, DSCP), правило (src/dst, протокол, порт, класс)
+
+### 8) Мониторинг и логи
+- URL: `/settings/monitoring`
+- Статистика интерфейсов: графики Rx/Tx, ошибки, дропы, realtime
+- Логи firewall: Timestamp, Rule, Action, Source, Destination + фильтры
+- Сессии NAT: Internal IP:Port, External IP:Port, Protocol, Timeout
+- Системные логи: поток `/var/log/syslog` + поиск
+
+### 9) Система и безопасность
+- URL: `/settings/system`
+- Обновления: проверка, загрузка .deb/.rpm
+- Резервное копирование: создать/восстановить/расписание
+- Пользователи: Username, Role, Last Login + формы
+- SSL/TLS: загрузка сертификата и ключа
+- Время: NTP серверы, часовой пояс
+
+### 10) API и интеграции
+- URL: `/settings/api`
+- API ключи: Key, Scope, Created, Revoke; Генерация ключа
+- Webhook: список URL, Добавить endpoint
+- Экспорт конфигурации: JSON, YAML, CLI скрипт
+
 ## Формат ключей P2P
 
 - Файлы `p2p_public.key` и `p2p_private.key` содержат HEX‑строку без префиксов.
