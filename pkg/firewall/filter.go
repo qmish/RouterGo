@@ -68,6 +68,19 @@ func (e *Engine) AddRule(rule Rule) {
 	e.hits = append(e.hits, 0)
 }
 
+func (e *Engine) RemoveRule(match Rule) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for i, rule := range e.rules {
+		if rulesEqual(rule, normalizeRule(match)) {
+			e.rules = append(e.rules[:i], e.rules[i+1:]...)
+			e.hits = append(e.hits[:i], e.hits[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
 func (e *Engine) SetDefaultPolicy(chain string, action Action) {
 	if e.defaultPolicies == nil {
 		e.defaultPolicies = map[string]Action{}
@@ -199,6 +212,49 @@ func normalizeRules(rules []Rule) []Rule {
 		out = append(out, normalizeRule(rule))
 	}
 	return out
+}
+
+func rulesEqual(a Rule, b Rule) bool {
+	if !strings.EqualFold(a.Chain, b.Chain) {
+		return false
+	}
+	if a.Action != b.Action || !strings.EqualFold(a.Protocol, b.Protocol) {
+		return false
+	}
+	if a.SrcPort != b.SrcPort || a.DstPort != b.DstPort {
+		return false
+	}
+	if a.InInterface != b.InInterface || a.OutInterface != b.OutInterface {
+		return false
+	}
+	if !ipNetEqual(a.SrcNet, b.SrcNet) || !ipNetEqual(a.DstNet, b.DstNet) {
+		return false
+	}
+	return true
+}
+
+func ipNetEqual(a *net.IPNet, b *net.IPNet) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if len(a.Mask) != len(b.Mask) {
+		return false
+	}
+	for i := range a.Mask {
+		if a.Mask[i] != b.Mask[i] {
+			return false
+		}
+	}
+	if a.IP == nil && b.IP == nil {
+		return true
+	}
+	if a.IP == nil || b.IP == nil {
+		return false
+	}
+	return a.IP.Equal(b.IP)
 }
 
 func protoToKey(proto string) uint8 {

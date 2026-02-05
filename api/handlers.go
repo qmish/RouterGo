@@ -290,6 +290,61 @@ func (h *Handlers) AddFirewallRule(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
+func (h *Handlers) DeleteFirewallRule(c *gin.Context) {
+	var req struct {
+		Chain        string `json:"chain"`
+		Action       string `json:"action"`
+		Protocol     string `json:"protocol"`
+		SrcIP        string `json:"src_ip"`
+		DstIP        string `json:"dst_ip"`
+		SrcPort      int    `json:"src_port"`
+		DstPort      int    `json:"dst_port"`
+		InInterface  string `json:"in_interface"`
+		OutInterface string `json:"out_interface"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+
+	var srcNet *net.IPNet
+	if req.SrcIP != "" {
+		_, parsed, err := net.ParseCIDR(req.SrcIP)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid src_ip"})
+			return
+		}
+		srcNet = parsed
+	}
+
+	var dstNet *net.IPNet
+	if req.DstIP != "" {
+		_, parsed, err := net.ParseCIDR(req.DstIP)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid dst_ip"})
+			return
+		}
+		dstNet = parsed
+	}
+
+	ok := h.Firewall.RemoveRule(firewall.Rule{
+		Chain:        req.Chain,
+		Action:       firewall.Action(req.Action),
+		Protocol:     req.Protocol,
+		SrcNet:       srcNet,
+		DstNet:       dstNet,
+		SrcPort:      req.SrcPort,
+		DstPort:      req.DstPort,
+		InInterface:  req.InInterface,
+		OutInterface: req.OutInterface,
+	})
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
 func (h *Handlers) GetStats(c *gin.Context) {
 	snapshot := h.Metrics.Snapshot()
 	c.JSON(http.StatusOK, gin.H{

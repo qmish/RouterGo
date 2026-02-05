@@ -443,6 +443,76 @@ func TestAddAndGetFirewallRules(t *testing.T) {
 	}
 }
 
+func TestDeleteFirewallRule(t *testing.T) {
+	h := &Handlers{
+		Routes:   routing.NewTable(nil),
+		Firewall: firewall.NewEngine(nil),
+		NAT:      nat.NewTable(nil),
+		QoS:      qos.NewQueueManager(nil),
+		Metrics:  metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	payload := map[string]any{
+		"chain":    "INPUT",
+		"action":   "ACCEPT",
+		"protocol": "TCP",
+		"src_ip":   "10.0.0.0/8",
+		"dst_port": 22,
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/firewall", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/api/firewall", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/firewall", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if bytes.Contains(w.Body.Bytes(), []byte("INPUT")) {
+		t.Fatalf("expected firewall rule removed")
+	}
+}
+
+func TestDeleteFirewallRuleNotFound(t *testing.T) {
+	h := &Handlers{
+		Routes:   routing.NewTable(nil),
+		Firewall: firewall.NewEngine(nil),
+		NAT:      nat.NewTable(nil),
+		QoS:      qos.NewQueueManager(nil),
+		Metrics:  metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	payload := map[string]any{
+		"chain":    "INPUT",
+		"action":   "ACCEPT",
+		"protocol": "TCP",
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodDelete, "/api/firewall", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
 func TestGetHealth(t *testing.T) {
 	h := &Handlers{}
 	router := setupRouter(h)
