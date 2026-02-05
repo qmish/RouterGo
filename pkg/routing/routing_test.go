@@ -122,3 +122,24 @@ func TestRemoveRoute(t *testing.T) {
 		t.Fatalf("expected remove to fail for missing route")
 	}
 }
+
+func TestUpdateRoute(t *testing.T) {
+	_, aNet, _ := net.ParseCIDR("10.0.0.0/24")
+	table := NewTable([]Route{
+		{Destination: *aNet, Interface: "eth0", Metric: 10, Gateway: net.ParseIP("192.0.2.1")},
+	})
+	ok := table.UpdateRoute(
+		Route{Destination: *aNet, Interface: "eth0", Metric: 10, Gateway: net.ParseIP("192.0.2.1")},
+		Route{Destination: *aNet, Interface: "eth1", Metric: 5, Gateway: net.ParseIP("192.0.2.2")},
+	)
+	if !ok {
+		t.Fatalf("expected update to succeed")
+	}
+	routes := table.Routes()
+	if routes[0].Interface != "eth1" || routes[0].Metric != 5 {
+		t.Fatalf("unexpected updated route: %+v", routes[0])
+	}
+	if table.UpdateRoute(Route{Destination: *aNet, Interface: "eth0"}, Route{Destination: *aNet}) {
+		t.Fatalf("expected update to fail for missing route")
+	}
+}

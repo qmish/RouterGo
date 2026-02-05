@@ -146,6 +146,76 @@ func (h *Handlers) DeleteRoute(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
+func (h *Handlers) UpdateRoute(c *gin.Context) {
+	var req struct {
+		OldDestination string `json:"old_destination"`
+		OldGateway     string `json:"old_gateway"`
+		OldInterface   string `json:"old_interface"`
+		OldMetric      int    `json:"old_metric"`
+		Destination    string `json:"destination"`
+		Gateway        string `json:"gateway"`
+		Interface      string `json:"interface"`
+		Metric         int    `json:"metric"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	if strings.TrimSpace(req.OldDestination) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "old_destination is required"})
+		return
+	}
+	if strings.TrimSpace(req.Destination) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "destination is required"})
+		return
+	}
+	_, oldDst, err := net.ParseCIDR(req.OldDestination)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid old_destination"})
+		return
+	}
+	_, dst, err := net.ParseCIDR(req.Destination)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid destination"})
+		return
+	}
+	var oldGw net.IP
+	if strings.TrimSpace(req.OldGateway) != "" {
+		oldGw = net.ParseIP(req.OldGateway)
+		if oldGw == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid old_gateway"})
+			return
+		}
+	}
+	var gw net.IP
+	if strings.TrimSpace(req.Gateway) != "" {
+		gw = net.ParseIP(req.Gateway)
+		if gw == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid gateway"})
+			return
+		}
+	}
+	ok := h.Routes.UpdateRoute(
+		routing.Route{
+			Destination: *oldDst,
+			Gateway:     oldGw,
+			Interface:   req.OldInterface,
+			Metric:      req.OldMetric,
+		},
+		routing.Route{
+			Destination: *dst,
+			Gateway:     gw,
+			Interface:   req.Interface,
+			Metric:      req.Metric,
+		},
+	)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "route not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
 func (h *Handlers) GetInterfaces(c *gin.Context) {
 	if h.ConfigMgr == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
