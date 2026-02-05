@@ -25,6 +25,11 @@
       .preset-icon { font-size: 28px; }
       .preset-actions { display:flex; gap:8px; margin-top: 8px; }
       .preset-summary table { font-size: 12px; }
+      .form-row { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin-top: 8px; }
+      .form-actions { margin-top: 8px; display:flex; gap:8px; flex-wrap: wrap; }
+      .form-row input, .form-row select, .form-row textarea { width: 100%; padding: 6px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 12px; }
+      .muted { font-size: 12px; color: #6b7280; }
+      .settings-section { margin-top: 8px; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
@@ -39,6 +44,7 @@
       <button data-tab="traffic">Трафик</button>
       <button data-tab="sessions">Сессии</button>
       <button data-tab="alerts">Алерты</button>
+      <button data-tab="settings">Настройки</button>
       <button data-tab="presets">Пресеты</button>
     </div>
     <div style="margin: 10px 0; display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
@@ -136,6 +142,176 @@
           </label>
         </div>
         <div class="alerts" id="alerts"></div>
+      </div>
+    </div>
+
+    <div id="tab-settings" class="grid gridWide hidden" style="margin-top: 12px;">
+      <div class="card">
+        <h3>Интерфейсы</h3>
+        <div class="meta">/settings/interfaces</div>
+        <table id="interfacesTable">
+          <thead>
+            <tr><th>Имя</th><th>IP/CIDR</th><th>Состояние</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="muted settings-section">Управление интерфейсами в разработке.</div>
+      </div>
+
+      <div class="card">
+        <h3>Маршрутизация</h3>
+        <div class="meta">/settings/routing</div>
+        <table id="routesTable">
+          <thead>
+            <tr><th>Destination</th><th>Gateway</th><th>Interface</th><th>Metric</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="form-row">
+          <input id="routeDestination" placeholder="destination (CIDR)">
+          <input id="routeGateway" placeholder="gateway (IP)">
+          <input id="routeInterface" placeholder="interface">
+          <input id="routeMetric" placeholder="metric" type="number" min="0">
+        </div>
+        <div class="form-actions">
+          <button id="addRouteBtn">Добавить маршрут</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Firewall</h3>
+        <div class="meta">/settings/firewall</div>
+        <table id="firewallTable">
+          <thead>
+            <tr><th>Chain</th><th>Action</th><th>Protocol</th><th>Src</th><th>Dst</th><th>Ports</th><th>IF</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="form-row">
+          <select id="fwChain">
+            <option value="INPUT">INPUT</option>
+            <option value="OUTPUT">OUTPUT</option>
+            <option value="FORWARD">FORWARD</option>
+          </select>
+          <select id="fwAction">
+            <option value="ACCEPT">ACCEPT</option>
+            <option value="DROP">DROP</option>
+            <option value="REJECT">REJECT</option>
+          </select>
+          <input id="fwProtocol" placeholder="protocol (TCP/UDP/ICMP)">
+          <input id="fwSrcIP" placeholder="src_ip (CIDR)">
+          <input id="fwDstIP" placeholder="dst_ip (CIDR)">
+          <input id="fwSrcPort" placeholder="src_port" type="number" min="0" max="65535">
+          <input id="fwDstPort" placeholder="dst_port" type="number" min="0" max="65535">
+          <input id="fwInIface" placeholder="in_interface">
+          <input id="fwOutIface" placeholder="out_interface">
+        </div>
+        <div class="form-actions">
+          <button id="addFirewallBtn">Добавить правило</button>
+        </div>
+        <div class="settings-section">
+          <div class="muted">Default policy:</div>
+          <div class="form-row">
+            <select id="fwDefaultChain">
+              <option value="INPUT">INPUT</option>
+              <option value="OUTPUT">OUTPUT</option>
+              <option value="FORWARD">FORWARD</option>
+            </select>
+            <select id="fwDefaultAction">
+              <option value="ACCEPT">ACCEPT</option>
+              <option value="DROP">DROP</option>
+              <option value="REJECT">REJECT</option>
+            </select>
+          </div>
+          <div class="form-actions">
+            <button id="setFirewallDefaultBtn">Установить default</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>NAT</h3>
+        <div class="meta">/settings/nat</div>
+        <table id="natTable">
+          <thead>
+            <tr><th>Type</th><th>Src</th><th>Dst</th><th>Ports</th><th>To</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="form-row">
+          <select id="natType">
+            <option value="SNAT">SNAT</option>
+            <option value="DNAT">DNAT</option>
+          </select>
+          <input id="natSrcIP" placeholder="src_ip (CIDR)">
+          <input id="natDstIP" placeholder="dst_ip (CIDR)">
+          <input id="natSrcPort" placeholder="src_port" type="number" min="0" max="65535">
+          <input id="natDstPort" placeholder="dst_port" type="number" min="0" max="65535">
+          <input id="natToIP" placeholder="to_ip (IP)">
+          <input id="natToPort" placeholder="to_port" type="number" min="0" max="65535">
+        </div>
+        <div class="form-actions">
+          <button id="addNATBtn">Добавить правило</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>QoS</h3>
+        <div class="meta">/settings/qos</div>
+        <table id="qosTable">
+          <thead>
+            <tr><th>Name</th><th>Protocol</th><th>Ports</th><th>Rate</th><th>Priority</th><th>Queue</th><th>Drop</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="form-row">
+          <input id="qosName" placeholder="name">
+          <input id="qosProtocol" placeholder="protocol">
+          <input id="qosSrcPort" placeholder="src_port" type="number" min="0" max="65535">
+          <input id="qosDstPort" placeholder="dst_port" type="number" min="0" max="65535">
+          <input id="qosRate" placeholder="rate_limit_kbps" type="number" min="0">
+          <input id="qosPriority" placeholder="priority" type="number" min="0">
+          <input id="qosMaxQueue" placeholder="max_queue" type="number" min="0">
+          <input id="qosDropPolicy" placeholder="drop_policy (head/tail)">
+        </div>
+        <div class="form-actions">
+          <button id="addQoSBtn">Добавить класс</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>VPN</h3>
+        <div class="meta">/settings/vpn</div>
+        <div class="muted">Списки туннелей, ключи, статусы, маршруты.</div>
+        <div class="muted settings-section">В разработке.</div>
+      </div>
+
+      <div class="card">
+        <h3>DHCP</h3>
+        <div class="meta">/settings/dhcp</div>
+        <div class="muted">Пулы, резервации, статические записи.</div>
+        <div class="muted settings-section">В разработке.</div>
+      </div>
+
+      <div class="card">
+        <h3>Мониторинг и логи</h3>
+        <div class="meta">/settings/monitoring</div>
+        <div class="muted">Графики интерфейсов, логи firewall, NAT сессии.</div>
+        <div class="muted settings-section">В разработке.</div>
+      </div>
+
+      <div class="card">
+        <h3>Система и безопасность</h3>
+        <div class="meta">/settings/system</div>
+        <div class="muted">Обновления, бэкапы, пользователи, SSL/TLS, NTP.</div>
+        <div class="muted settings-section">В разработке.</div>
+      </div>
+
+      <div class="card">
+        <h3>API и интеграции</h3>
+        <div class="meta">/settings/api</div>
+        <div class="muted">API ключи, webhooks, экспорт конфигурации.</div>
+        <div class="muted settings-section">В разработке.</div>
       </div>
     </div>
 
@@ -600,6 +776,174 @@
         }
       }
 
+      async function apiGet(url) {
+        const res = await fetch(url);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || 'Ошибка запроса');
+        }
+        return res.json();
+      }
+
+      async function apiPost(url, payload) {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || 'Ошибка запроса');
+        }
+        return res.json().catch(() => ({}));
+      }
+
+      async function loadRoutes() {
+        return apiGet('/api/routes');
+      }
+
+      async function loadFirewall() {
+        return apiGet('/api/firewall');
+      }
+
+      async function loadFirewallDefaults() {
+        return apiGet('/api/firewall/defaults');
+      }
+
+      async function loadNAT() {
+        return apiGet('/api/nat');
+      }
+
+      async function loadQoS() {
+        return apiGet('/api/qos');
+      }
+
+      function renderEmptyRow(tbody, cols, text) {
+        tbody.innerHTML = `<tr><td colspan="${cols}" class="muted">${text}</td></tr>`;
+      }
+
+      function renderRoutes(routes) {
+        const tbody = document.querySelector('#routesTable tbody');
+        if (!routes || routes.length === 0) {
+          renderEmptyRow(tbody, 4, 'Маршруты не найдены');
+          return;
+        }
+        tbody.innerHTML = routes.map(r => `
+          <tr>
+            <td>${r.destination || ''}</td>
+            <td>${r.gateway || ''}</td>
+            <td>${r.interface || ''}</td>
+            <td>${r.metric ?? ''}</td>
+          </tr>
+        `).join('');
+      }
+
+      function renderFirewall(rules) {
+        const tbody = document.querySelector('#firewallTable tbody');
+        if (!rules || rules.length === 0) {
+          renderEmptyRow(tbody, 7, 'Правила не найдены');
+          return;
+        }
+        tbody.innerHTML = rules.map(r => {
+          const ports = [r.src_port ? `src:${r.src_port}` : '', r.dst_port ? `dst:${r.dst_port}` : ''].filter(Boolean).join(' ');
+          const ifaces = [r.in_interface || '', r.out_interface || ''].filter(Boolean).join(' → ');
+          return `
+            <tr>
+              <td>${r.chain || ''}</td>
+              <td>${r.action || ''}</td>
+              <td>${r.protocol || ''}</td>
+              <td>${r.src_ip || ''}</td>
+              <td>${r.dst_ip || ''}</td>
+              <td>${ports}</td>
+              <td>${ifaces}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      function renderNAT(rules) {
+        const tbody = document.querySelector('#natTable tbody');
+        if (!rules || rules.length === 0) {
+          renderEmptyRow(tbody, 5, 'Правила не найдены');
+          return;
+        }
+        tbody.innerHTML = rules.map(r => {
+          const ports = [r.src_port ? `src:${r.src_port}` : '', r.dst_port ? `dst:${r.dst_port}` : ''].filter(Boolean).join(' ');
+          const to = [r.to_ip || '', r.to_port ? `:${r.to_port}` : ''].join('');
+          return `
+            <tr>
+              <td>${r.type || ''}</td>
+              <td>${r.src_ip || ''}</td>
+              <td>${r.dst_ip || ''}</td>
+              <td>${ports}</td>
+              <td>${to}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      function renderQoS(classes) {
+        const tbody = document.querySelector('#qosTable tbody');
+        if (!classes || classes.length === 0) {
+          renderEmptyRow(tbody, 7, 'Классы не найдены');
+          return;
+        }
+        tbody.innerHTML = classes.map(c => {
+          const ports = [c.src_port ? `src:${c.src_port}` : '', c.dst_port ? `dst:${c.dst_port}` : ''].filter(Boolean).join(' ');
+          return `
+            <tr>
+              <td>${c.name || ''}</td>
+              <td>${c.protocol || ''}</td>
+              <td>${ports}</td>
+              <td>${c.rate_limit_kbps ?? ''}</td>
+              <td>${c.priority ?? ''}</td>
+              <td>${c.max_queue ?? ''}</td>
+              <td>${c.drop_policy || ''}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      function renderInterfaces(interfaces) {
+        const tbody = document.querySelector('#interfacesTable tbody');
+        if (!interfaces || interfaces.length === 0) {
+          renderEmptyRow(tbody, 3, 'Данные недоступны');
+          return;
+        }
+        tbody.innerHTML = interfaces.map(i => `
+          <tr>
+            <td>${i.name || ''}</td>
+            <td>${i.ip || ''}</td>
+            <td>${i.state || ''}</td>
+          </tr>
+        `).join('');
+      }
+
+      async function refreshSettings() {
+        try {
+          const [routes, firewall, nat, qos, defaults] = await Promise.all([
+            loadRoutes(),
+            loadFirewall(),
+            loadNAT(),
+            loadQoS(),
+            loadFirewallDefaults()
+          ]);
+          renderRoutes(routes);
+          renderFirewall(firewall);
+          renderNAT(nat);
+          renderQoS(qos);
+          renderInterfaces([]);
+          if (defaults) {
+            const chain = document.getElementById('fwDefaultChain').value;
+            if (defaults[chain]) {
+              document.getElementById('fwDefaultAction').value = defaults[chain];
+            }
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
       async function refreshAll() {
         try {
           const [top, sessions, alerts, stats, proxyStats] = await Promise.all([
@@ -665,6 +1009,9 @@
         document.querySelectorAll('.nav button').forEach(btn => {
           btn.classList.toggle('active', btn.dataset.tab === tab);
         });
+        if (tab === 'settings') {
+          refreshSettings();
+        }
       }
 
       document.querySelectorAll('.nav button').forEach(btn => {
@@ -698,6 +1045,108 @@
           presetsList = await loadPresets();
           renderPresets(presetsList);
           alert('Импорт завершён');
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      function readNumber(id) {
+        const raw = document.getElementById(id).value.trim();
+        if (!raw) {
+          return 0;
+        }
+        const parsed = parseInt(raw, 10);
+        return Number.isNaN(parsed) ? 0 : parsed;
+      }
+
+      document.getElementById('addRouteBtn').addEventListener('click', async () => {
+        const destination = document.getElementById('routeDestination').value.trim();
+        const gateway = document.getElementById('routeGateway').value.trim();
+        const iface = document.getElementById('routeInterface').value.trim();
+        const metric = readNumber('routeMetric');
+        if (!destination) {
+          alert('Укажите destination (CIDR)');
+          return;
+        }
+        try {
+          await apiPost('/api/routes', {
+            destination: destination,
+            gateway: gateway,
+            interface: iface,
+            metric: metric
+          });
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('addFirewallBtn').addEventListener('click', async () => {
+        try {
+          await apiPost('/api/firewall', {
+            chain: document.getElementById('fwChain').value,
+            action: document.getElementById('fwAction').value,
+            protocol: document.getElementById('fwProtocol').value.trim(),
+            src_ip: document.getElementById('fwSrcIP').value.trim(),
+            dst_ip: document.getElementById('fwDstIP').value.trim(),
+            src_port: readNumber('fwSrcPort'),
+            dst_port: readNumber('fwDstPort'),
+            in_interface: document.getElementById('fwInIface').value.trim(),
+            out_interface: document.getElementById('fwOutIface').value.trim()
+          });
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('setFirewallDefaultBtn').addEventListener('click', async () => {
+        try {
+          await apiPost('/api/firewall/defaults', {
+            chain: document.getElementById('fwDefaultChain').value,
+            action: document.getElementById('fwDefaultAction').value
+          });
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('addNATBtn').addEventListener('click', async () => {
+        try {
+          await apiPost('/api/nat', {
+            type: document.getElementById('natType').value,
+            src_ip: document.getElementById('natSrcIP').value.trim(),
+            dst_ip: document.getElementById('natDstIP').value.trim(),
+            src_port: readNumber('natSrcPort'),
+            dst_port: readNumber('natDstPort'),
+            to_ip: document.getElementById('natToIP').value.trim(),
+            to_port: readNumber('natToPort')
+          });
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('addQoSBtn').addEventListener('click', async () => {
+        const name = document.getElementById('qosName').value.trim();
+        if (!name) {
+          alert('Укажите имя класса');
+          return;
+        }
+        try {
+          await apiPost('/api/qos', {
+            name: name,
+            protocol: document.getElementById('qosProtocol').value.trim(),
+            src_port: readNumber('qosSrcPort'),
+            dst_port: readNumber('qosDstPort'),
+            rate_limit_kbps: readNumber('qosRate'),
+            priority: readNumber('qosPriority'),
+            max_queue: readNumber('qosMaxQueue'),
+            drop_policy: document.getElementById('qosDropPolicy').value.trim()
+          });
+          await refreshSettings();
         } catch (e) {
           alert(e.message);
         }

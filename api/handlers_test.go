@@ -166,6 +166,77 @@ func TestGetRoutes(t *testing.T) {
 	}
 }
 
+func TestAddRoute(t *testing.T) {
+	h := &Handlers{
+		Routes:  routing.NewTable(nil),
+		NAT:     nat.NewTable(nil),
+		QoS:     qos.NewQueueManager(nil),
+		Metrics: metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	payload := map[string]any{
+		"destination": "10.0.0.0/24",
+		"gateway":     "192.0.2.1",
+		"interface":   "eth0",
+		"metric":      5,
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/routes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/routes", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("10.0.0.0/24")) {
+		t.Fatalf("expected route in response")
+	}
+}
+
+func TestAddRouteInvalid(t *testing.T) {
+	h := &Handlers{
+		Routes:  routing.NewTable(nil),
+		NAT:     nat.NewTable(nil),
+		QoS:     qos.NewQueueManager(nil),
+		Metrics: metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	payload := map[string]any{
+		"destination": "bad",
+		"gateway":     "192.0.2.1",
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/routes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+
+	payload = map[string]any{
+		"destination": "10.0.0.0/24",
+		"gateway":     "bad",
+	}
+	body, _ = json.Marshal(payload)
+	req = httptest.NewRequest(http.MethodPost, "/api/routes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
 func TestAddAndGetFirewallRules(t *testing.T) {
 	h := &Handlers{
 		Routes:   routing.NewTable(nil),
