@@ -253,3 +253,104 @@ func TestUniqueDstBehavior(t *testing.T) {
 		t.Fatalf("expected alert-only behavior")
 	}
 }
+
+func TestUpdateRuleAndGetRule(t *testing.T) {
+	engine := NewEngine(Config{AlertLimit: 10})
+	engine.AddRule(Rule{
+		Name:     "r1",
+		Action:   ActionAlert,
+		Protocol: "TCP",
+		Enabled:  true,
+	})
+
+	if ok := engine.UpdateRule("r1", Rule{
+		Action:   ActionDrop,
+		Protocol: "UDP",
+		DstPort:  53,
+		Enabled:  false,
+	}); !ok {
+		t.Fatalf("expected update to succeed")
+	}
+	rule, ok := engine.GetRule("r1")
+	if !ok {
+		t.Fatalf("expected rule r1 to exist")
+	}
+	if rule.Action != ActionDrop || rule.Protocol != "UDP" || rule.DstPort != 53 || rule.Enabled {
+		t.Fatalf("unexpected updated rule: %+v", rule)
+	}
+	if ok := engine.UpdateRule("missing", Rule{Action: ActionDrop}); ok {
+		t.Fatalf("expected update to fail for missing rule")
+	}
+}
+
+func TestDeleteRule(t *testing.T) {
+	engine := NewEngine(Config{AlertLimit: 10})
+	engine.AddRule(Rule{Name: "r1", Action: ActionAlert, Enabled: true})
+	engine.AddRule(Rule{Name: "r2", Action: ActionAlert, Enabled: true})
+
+	if ok := engine.DeleteRule("r1"); !ok {
+		t.Fatalf("expected delete to succeed")
+	}
+	if _, ok := engine.GetRule("r1"); ok {
+		t.Fatalf("expected r1 to be deleted")
+	}
+	if ok := engine.DeleteRule("missing"); ok {
+		t.Fatalf("expected delete to fail for missing rule")
+	}
+}
+
+func TestRulesAndAlertsReset(t *testing.T) {
+	engine := NewEngine(Config{AlertLimit: 10})
+	engine.AddRule(Rule{
+		Name:            "sig",
+		Action:          ActionAlert,
+		Protocol:        "TCP",
+		PayloadContains: "GET",
+		Enabled:         true,
+	})
+
+	pkt := network.Packet{
+		Data: []byte("GET / HTTP/1.1"),
+		Metadata: network.PacketMetadata{
+			Protocol: "TCP",
+			SrcIP:    net.ParseIP("10.0.0.1"),
+			DstIP:    net.ParseIP("1.1.1.1"),
+			SrcPort:  1234,
+			DstPort:  80,
+		},
+	}
+	engine.Detect(pkt)
+
+	alerts := engine.Alerts()
+	if len(alerts) != 1 {
+		t.Fatalf("expected 1 alert, got %d", len(alerts))
+	}
+	alerts[0].Reason = "changed"
+	alertsAgain := engine.Alerts()
+	if alertsAgain[0].Reason != "sig" {
+		t.Fatalf("expected alerts slice to be a copy")
+	}
+
+	rules := engine.Rules()
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(rules))
+	}
+	rules[0].Name = "changed"
+	if engine.Rules()[0].Name != "sig" {
+		t.Fatalf("expected rules slice to be a copy")
+	}
+
+	stats := engine.RulesWithStats()
+	if len(stats) != 1 || stats[0].Hits == 0 {
+		t.Fatalf("expected rule hits recorded")
+	}
+
+	engine.Reset()
+	if len(engine.Alerts()) != 0 {
+		t.Fatalf("expected alerts cleared")
+	}
+	stats = engine.RulesWithStats()
+	if len(stats) != 1 || stats[0].Hits != 0 {
+		t.Fatalf("expected rule hits reset, got %+v", stats)
+	}
+}
