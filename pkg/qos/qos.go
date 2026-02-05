@@ -119,6 +119,62 @@ func (q *QueueManager) AddClass(class Class) {
 	q.buckets = makeBucketMap(q.classes)
 }
 
+func (q *QueueManager) RemoveClass(name string) bool {
+	if strings.TrimSpace(name) == "" {
+		return false
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if strings.EqualFold(name, "default") {
+		return false
+	}
+	found := false
+	out := make([]Class, 0, len(q.classes))
+	for _, cl := range q.classes {
+		if strings.EqualFold(cl.Name, name) {
+			found = true
+			continue
+		}
+		out = append(out, cl)
+	}
+	if !found {
+		return false
+	}
+	q.classes = normalizeClasses(out)
+	q.queues = makeQueueMap(q.classes)
+	q.buckets = makeBucketMap(q.classes)
+	return true
+}
+
+func (q *QueueManager) UpdateClass(name string, class Class) bool {
+	if strings.TrimSpace(name) == "" {
+		return false
+	}
+	if strings.EqualFold(name, "default") || strings.EqualFold(class.Name, "default") {
+		return false
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	found := false
+	out := make([]Class, 0, len(q.classes))
+	for _, cl := range q.classes {
+		if strings.EqualFold(cl.Name, name) {
+			class.Name = name
+			out = append(out, class)
+			found = true
+			continue
+		}
+		out = append(out, cl)
+	}
+	if !found {
+		return false
+	}
+	q.classes = normalizeClasses(out)
+	q.queues = makeQueueMap(q.classes)
+	q.buckets = makeBucketMap(q.classes)
+	return true
+}
+
 func (q *QueueManager) Classes() []Class {
 	q.mu.Lock()
 	defer q.mu.Unlock()

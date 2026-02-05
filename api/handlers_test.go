@@ -284,6 +284,151 @@ func TestAddAndGetQoS(t *testing.T) {
 	}
 }
 
+func TestDeleteQoSClass(t *testing.T) {
+	h := &Handlers{
+		Routes:  routing.NewTable(nil),
+		NAT:     nat.NewTable(nil),
+		QoS:     qos.NewQueueManager(nil),
+		Metrics: metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	payload := map[string]any{
+		"name":      "voice",
+		"protocol":  "UDP",
+		"dst_port":  5060,
+		"priority":  10,
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/qos", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	delPayload := map[string]any{"name": "voice"}
+	body, _ = json.Marshal(delPayload)
+	req = httptest.NewRequest(http.MethodDelete, "/api/qos", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/qos", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if bytes.Contains(w.Body.Bytes(), []byte("voice")) {
+		t.Fatalf("expected qos class removed")
+	}
+}
+
+func TestDeleteQoSClassNotFound(t *testing.T) {
+	h := &Handlers{
+		Routes:  routing.NewTable(nil),
+		NAT:     nat.NewTable(nil),
+		QoS:     qos.NewQueueManager(nil),
+		Metrics: metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	body, _ := json.Marshal(map[string]any{"name": "voice"})
+	req := httptest.NewRequest(http.MethodDelete, "/api/qos", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestUpdateQoSClass(t *testing.T) {
+	h := &Handlers{
+		Routes:  routing.NewTable(nil),
+		NAT:     nat.NewTable(nil),
+		QoS:     qos.NewQueueManager(nil),
+		Metrics: metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	payload := map[string]any{
+		"name":      "voice",
+		"protocol":  "UDP",
+		"dst_port":  5060,
+		"priority":  10,
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/qos", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	update := map[string]any{
+		"old_name":  "voice",
+		"name":      "voice",
+		"protocol":  "UDP",
+		"dst_port":  5060,
+		"priority":  20,
+	}
+	body, _ = json.Marshal(update)
+	req = httptest.NewRequest(http.MethodPut, "/api/qos", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/qos", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var classes []qos.Class
+	if err := json.Unmarshal(w.Body.Bytes(), &classes); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	found := false
+	for _, cl := range classes {
+		if cl.Name == "voice" && cl.Priority == 20 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected updated qos class in response")
+	}
+}
+
+func TestUpdateQoSClassNotFound(t *testing.T) {
+	h := &Handlers{
+		Routes:  routing.NewTable(nil),
+		NAT:     nat.NewTable(nil),
+		QoS:     qos.NewQueueManager(nil),
+		Metrics: metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	body, _ := json.Marshal(map[string]any{"old_name": "voice", "name": "voice"})
+	req := httptest.NewRequest(http.MethodPut, "/api/qos", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
 func TestGetRoutes(t *testing.T) {
 	table := routing.NewTable(nil)
 	_, dst, _ := net.ParseCIDR("10.10.0.0/16")

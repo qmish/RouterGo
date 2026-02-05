@@ -266,7 +266,7 @@
         <div class="meta">/settings/qos</div>
         <table id="qosTable">
           <thead>
-            <tr><th>Name</th><th>Protocol</th><th>Ports</th><th>Rate</th><th>Priority</th><th>Queue</th><th>Drop</th></tr>
+            <tr><th>Name</th><th>Protocol</th><th>Ports</th><th>Rate</th><th>Priority</th><th>Queue</th><th>Drop</th><th>Actions</th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -282,6 +282,8 @@
         </div>
         <div class="form-actions">
           <button id="addQoSBtn">Добавить класс</button>
+          <button id="updateQoSBtn" disabled>Обновить класс</button>
+          <button id="cancelQoSEditBtn" disabled>Отмена</button>
         </div>
       </div>
 
@@ -969,7 +971,7 @@
       function renderQoS(classes) {
         const tbody = document.querySelector('#qosTable tbody');
         if (!classes || classes.length === 0) {
-          renderEmptyRow(tbody, 7, 'Классы не найдены');
+          renderEmptyRow(tbody, 8, 'Классы не найдены');
           return;
         }
         tbody.innerHTML = classes.map(c => {
@@ -983,6 +985,19 @@
               <td>${c.priority ?? ''}</td>
               <td>${c.max_queue ?? ''}</td>
               <td>${c.drop_policy || ''}</td>
+              <td>
+                <button class="qos-delete" data-name="${c.name || ''}">Удалить</button>
+                <button class="qos-edit"
+                  data-name="${c.name || ''}"
+                  data-protocol="${c.protocol || ''}"
+                  data-src-port="${c.src_port ?? 0}"
+                  data-dst-port="${c.dst_port ?? 0}"
+                  data-rate="${c.rate_limit_kbps ?? 0}"
+                  data-priority="${c.priority ?? 0}"
+                  data-max-queue="${c.max_queue ?? 0}"
+                  data-drop-policy="${c.drop_policy || ''}"
+                >Редактировать</button>
+              </td>
             </tr>
           `;
         }).join('');
@@ -1448,6 +1463,97 @@
             max_queue: readNumber('qosMaxQueue'),
             drop_policy: document.getElementById('qosDropPolicy').value.trim()
           });
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      let editingQoS = null;
+      function setQoSEditState(state) {
+        editingQoS = state;
+        document.getElementById('updateQoSBtn').disabled = !editingQoS;
+        document.getElementById('cancelQoSEditBtn').disabled = !editingQoS;
+      }
+
+      function fillQoSForm(cl) {
+        document.getElementById('qosName').value = cl.name || '';
+        document.getElementById('qosProtocol').value = cl.protocol || '';
+        document.getElementById('qosSrcPort').value = cl.src_port ?? '';
+        document.getElementById('qosDstPort').value = cl.dst_port ?? '';
+        document.getElementById('qosRate').value = cl.rate_limit_kbps ?? '';
+        document.getElementById('qosPriority').value = cl.priority ?? '';
+        document.getElementById('qosMaxQueue').value = cl.max_queue ?? '';
+        document.getElementById('qosDropPolicy').value = cl.drop_policy || '';
+      }
+
+      document.getElementById('updateQoSBtn').addEventListener('click', async () => {
+        if (!editingQoS) {
+          return;
+        }
+        const name = document.getElementById('qosName').value.trim();
+        if (!name) {
+          alert('Укажите имя класса');
+          return;
+        }
+        try {
+          await apiPut('/api/qos', {
+            old_name: editingQoS.name,
+            name: name,
+            protocol: document.getElementById('qosProtocol').value.trim(),
+            src_port: readNumber('qosSrcPort'),
+            dst_port: readNumber('qosDstPort'),
+            rate_limit_kbps: readNumber('qosRate'),
+            priority: readNumber('qosPriority'),
+            max_queue: readNumber('qosMaxQueue'),
+            drop_policy: document.getElementById('qosDropPolicy').value.trim()
+          });
+          setQoSEditState(null);
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('cancelQoSEditBtn').addEventListener('click', () => {
+        setQoSEditState(null);
+        fillQoSForm({
+          name: '',
+          protocol: '',
+          src_port: '',
+          dst_port: '',
+          rate_limit_kbps: '',
+          priority: '',
+          max_queue: '',
+          drop_policy: ''
+        });
+      });
+
+      document.getElementById('qosTable').addEventListener('click', async (event) => {
+        const target = event.target;
+        if (target.classList.contains('qos-edit')) {
+          const cl = {
+            name: target.dataset.name || '',
+            protocol: target.dataset.protocol || '',
+            src_port: parseInt(target.dataset.srcPort || '0', 10) || 0,
+            dst_port: parseInt(target.dataset.dstPort || '0', 10) || 0,
+            rate_limit_kbps: parseInt(target.dataset.rate || '0', 10) || 0,
+            priority: parseInt(target.dataset.priority || '0', 10) || 0,
+            max_queue: parseInt(target.dataset.maxQueue || '0', 10) || 0,
+            drop_policy: target.dataset.dropPolicy || ''
+          };
+          setQoSEditState(cl);
+          fillQoSForm(cl);
+          return;
+        }
+        if (!target.classList.contains('qos-delete')) {
+          return;
+        }
+        if (!confirm('Удалить класс QoS?')) {
+          return;
+        }
+        try {
+          await apiDelete('/api/qos', { name: target.dataset.name || '' });
           await refreshSettings();
         } catch (e) {
           alert(e.message);
