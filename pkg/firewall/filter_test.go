@@ -124,3 +124,23 @@ func TestFirewallChainHits(t *testing.T) {
 		t.Fatalf("expected INPUT hits 2, got %d", hits["INPUT"])
 	}
 }
+
+func TestFirewallCaseInsensitiveMatch(t *testing.T) {
+	engine := NewEngine([]Rule{
+		{
+			Chain:    "forward",
+			Action:   ActionAccept,
+			Protocol: "tcp",
+		},
+	})
+
+	pkt := network.Packet{
+		Metadata: network.PacketMetadata{
+			Protocol: "TCP",
+		},
+	}
+
+	if got := engine.Evaluate("FORWARD", pkt); got != ActionAccept {
+		t.Fatalf("expected ACCEPT, got %s", got)
+	}
+}
