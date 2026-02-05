@@ -30,7 +30,7 @@ func (f *fakePacketIO) Close() error {
 	return nil
 }
 
-func TestDequeueAndWrite(t *testing.T) {
+func TestDequeueAndWriteBatch(t *testing.T) {
 	queue := qos.NewQueueManager(nil)
 	writer := &fakePacketIO{}
 	m := metrics.NewWithRegistry(prometheus.NewRegistry())
@@ -42,7 +42,7 @@ func TestDequeueAndWrite(t *testing.T) {
 	}
 	queue.Enqueue(pkt)
 
-	if ok := dequeueAndWrite(queue, writer, m); !ok {
+	if ok := dequeueAndWriteBatch(queue, writer, m, 2); !ok {
 		t.Fatalf("expected dequeue success")
 	}
 	if writer.writeCount != 1 {
@@ -56,12 +56,12 @@ func TestDequeueAndWrite(t *testing.T) {
 	}
 }
 
-func TestDequeueAndWriteEmpty(t *testing.T) {
+func TestDequeueAndWriteBatchEmpty(t *testing.T) {
 	queue := qos.NewQueueManager(nil)
 	writer := &fakePacketIO{}
 	m := metrics.NewWithRegistry(prometheus.NewRegistry())
 
-	if ok := dequeueAndWrite(queue, writer, m); ok {
+	if ok := dequeueAndWriteBatch(queue, writer, m, 2); ok {
 		t.Fatalf("expected dequeue false")
 	}
 	if writer.writeCount != 0 {

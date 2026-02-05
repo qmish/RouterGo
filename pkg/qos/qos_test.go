@@ -153,3 +153,37 @@ func TestQueueHeadDrop(t *testing.T) {
 		t.Fatalf("expected newest packet after head drop")
 	}
 }
+
+func TestQueueDequeueBatchPriority(t *testing.T) {
+	q := NewQueueManager([]Class{
+		{Name: "high", Priority: 10, Protocol: "UDP"},
+		{Name: "low", Priority: 1, Protocol: "TCP"},
+	})
+
+	q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "TCP"}}) // low
+	q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "UDP"}}) // high
+	q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "TCP"}}) // low
+
+	batch := q.DequeueBatch(2)
+	if len(batch) != 2 {
+		t.Fatalf("expected 2 packets, got %d", len(batch))
+	}
+	if batch[0].Metadata.Protocol != "UDP" {
+		t.Fatalf("expected high priority packet first")
+	}
+	if batch[1].Metadata.Protocol != "TCP" {
+		t.Fatalf("expected low priority packet second")
+	}
+}
+
+func TestQueueDequeueBatchMax(t *testing.T) {
+	q := NewQueueManager([]Class{
+		{Name: "default", Priority: 0},
+	})
+	q.Enqueue(network.Packet{Metadata: network.PacketMetadata{Protocol: "TCP"}})
+
+	batch := q.DequeueBatch(3)
+	if len(batch) != 1 {
+		t.Fatalf("expected 1 packet, got %d", len(batch))
+	}
+}

@@ -82,24 +82,7 @@ func (q *QueueManager) Enqueue(pkt network.Packet) (bool, bool, string) {
 func (q *QueueManager) Dequeue() (network.Packet, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	for _, class := range q.classes {
-		queue := q.queues[class.Name]
-		if len(queue) == 0 {
-			continue
-		}
-
-		size := packetSize(queue[0])
-		if bucket, ok := q.buckets[class.Name]; ok {
-			if !bucket.Allow(size) {
-				continue
-			}
-		}
-
-		pkt := queue[0]
-		q.queues[class.Name] = queue[1:]
-		return pkt, true
-	}
-	return network.Packet{}, false
+	return q.dequeueOnceLocked()
 }
 
 func (q *QueueManager) SetNow(now func() time.Time) {
@@ -108,6 +91,23 @@ func (q *QueueManager) SetNow(now func() time.Time) {
 	for _, bucket := range q.buckets {
 		bucket.now = now
 	}
+}
+
+func (q *QueueManager) DequeueBatch(max int) []network.Packet {
+	if max <= 0 {
+		return nil
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	out := make([]network.Packet, 0, max)
+	for i := 0; i < max; i++ {
+		pkt, ok := q.dequeueOnceLocked()
+		if !ok {
+			break
+		}
+		out = append(out, pkt)
+	}
+	return out
 }
 
 func (q *QueueManager) AddClass(class Class) {
@@ -158,6 +158,27 @@ func (q *QueueManager) classify(pkt network.Packet) Class {
 		}
 	}
 	return Class{Name: "default"}
+}
+
+func (q *QueueManager) dequeueOnceLocked() (network.Packet, bool) {
+	for _, class := range q.classes {
+		queue := q.queues[class.Name]
+		if len(queue) == 0 {
+			continue
+		}
+
+		size := packetSize(queue[0])
+		if bucket, ok := q.buckets[class.Name]; ok {
+			if !bucket.Allow(size) {
+				continue
+			}
+		}
+
+		pkt := queue[0]
+		q.queues[class.Name] = queue[1:]
+		return pkt, true
+	}
+	return network.Packet{}, false
 }
 
 func packetSize(pkt network.Packet) int64 {
