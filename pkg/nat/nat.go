@@ -95,6 +95,14 @@ func (t *Table) ResetStats() {
 	}
 }
 
+func (t *Table) ReplaceRules(rules []Rule) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.rules = rules
+	t.hits = make([]uint64, len(rules))
+	t.conns = make(map[ConnKey]ConnValue)
+}
+
 func (t *Table) Apply(pkt network.Packet) network.Packet {
 	t.mu.Lock()
 	defer t.mu.Unlock()

@@ -58,6 +58,11 @@ go build -o p2pkeygen cmd/p2pkeygen/main.go
 - `GET /api/proxy/stats` — статистика прокси/кэша
 - `POST /api/proxy/cache/clear` — очистка кэша
 - `GET /api/enrich/ip?ip=1.1.1.1` — обогащение IP (GeoIP/ASN/Threat)
+- `GET /api/ha/status` — статус HA (роль/пиры)
+- `GET /api/ha/state` — текущее состояние (для синхронизации)
+- `POST /api/ha/state` — применить состояние (failover)
+- `GET /api/observability/traces` — последние API‑трейсы
+- `GET /api/observability/alerts` — последние алерты
 - `GET /api/stats` — базовая статистика (rx/tx/пакеты/байты/ошибки/дропы/причины/классы QoS/конфиг/p2p/proxy)
 
 ## Формат ключей P2P
@@ -108,6 +113,41 @@ integrations:
     remote_write_url: "http://localhost:9090/api/v1/write"
     interval_seconds: 10
 ```
+
+HA (active-passive):
+
+```yaml
+ha:
+  enabled: true
+  node_id: node-1
+  priority: 100
+  heartbeat_interval_seconds: 2
+  hold_seconds: 6
+  bind_addr: :5356
+  multicast_addr: 224.0.0.252:5356
+  peers:
+    - http://127.0.0.1:8080
+  state_sync_interval_seconds: 5
+  state_endpoint_path: /api/ha/state
+```
+
+Observability:
+
+```yaml
+observability:
+  enabled: true
+  traces_limit: 1000
+  pprof_enabled: false
+  pprof_path: /debug/pprof
+  alerts_enabled: true
+  alerts_limit: 1000
+  alert_interval_seconds: 10
+  drops_threshold: 100
+  errors_threshold: 10
+  ids_alerts_threshold: 5
+```
+
+При включённом `pprof_enabled` доступны профили по пути `pprof_path` (например, `/debug/pprof/`).
 
 ## Примечания
 

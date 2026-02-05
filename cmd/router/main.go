@@ -20,10 +20,12 @@ import (
 	"router-go/internal/config"
 	"router-go/internal/logger"
 	"router-go/internal/metrics"
+	"router-go/internal/observability"
 	"router-go/internal/platform"
 	"router-go/pkg/firewall"
 	"router-go/pkg/enrich"
 	"router-go/pkg/flow"
+	"router-go/pkg/ha"
 	"router-go/pkg/ids"
 	"router-go/pkg/integrations/logs"
 	"router-go/pkg/nat"
@@ -77,6 +79,9 @@ func main() {
 	p2pEngine := buildP2P(cfg, routeTable, metricsSrv, log, ctx)
 	proxyEngine := buildProxy(cfg, metricsSrv, log, ctx)
 	enrichSvc := buildEnrichService(cfg, log)
+	haMgr := buildHA(cfg, log, routeTable, firewallEngine, natTable, qosQueue)
+	obsStore := buildObservability(cfg, log)
+	alertStore := startAlerting(ctx, cfg, metricsSrv, log)
 
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -98,14 +103,27 @@ func main() {
 		Log:       log,
 		ConfigMgr: cfgManager,
 		Metrics:   metricsSrv,
+		HA:        haMgr,
+		Observability: obsStore,
+		Alerts:    alertStore,
 	}
 	api.RegisterRoutes(router, handlers)
+	if cfg.Observability.PprofEnabled {
+		api.RegisterPprof(router, cfg.Observability.PprofPath)
+	}
 
 	go func() {
 		if err := runAPIServer(ctx, router, cfg, log); err != nil {
 			log.Error("api server error", map[string]any{"err": err.Error()})
 		}
 	}()
+	if haMgr != nil {
+		go func() {
+			if err := haMgr.Start(ctx); err != nil {
+				log.Error("ha manager error", map[string]any{"err": err.Error()})
+			}
+		}()
+	}
 
 	startPacketLoop(ctx, cfg, log, metricsSrv, routeTable, firewallEngine, idsEngine, natTable, qosQueue, flowEngine)
 	<-ctx.Done()
@@ -477,6 +495,94 @@ func buildEnrichService(cfg *config.Config, log *logger.Logger) *enrich.Service 
 		threatProvider = enrich.NewThreatAbuseIPDB(cfg.Integrations.ThreatIntel.APIKey, timeout)
 	}
 	return enrich.NewService(geoProvider, asnProvider, threatProvider, 2*time.Minute)
+}
+
+func buildHA(cfg *config.Config, log *logger.Logger, routes *routing.Table, firewallEngine *firewall.Engine, natTable *nat.Table, qosQueue *qos.QueueManager) *ha.Manager {
+	if !cfg.HA.Enabled {
+		return nil
+	}
+	statePath := cfg.HA.StateEndpointPath
+	if statePath == "" {
+		statePath = "/api/ha/state"
+	}
+	if !strings.HasPrefix(statePath, "/") {
+		statePath = "/" + statePath
+	}
+	manager := ha.NewManager(
+		cfg.HA.NodeID,
+		cfg.HA.Priority,
+		time.Duration(cfg.HA.HeartbeatInterval)*time.Second,
+		time.Duration(cfg.HA.HoldSeconds)*time.Second,
+		cfg.HA.BindAddr,
+		cfg.HA.MulticastAddr,
+		cfg.HA.Peers,
+		statePath,
+		time.Duration(cfg.HA.StateSyncInterval)*time.Second,
+		func() ha.State {
+			return ha.BuildState(firewallEngine, natTable, qosQueue, routes)
+		},
+		func(state ha.State) {
+			ha.ApplyState(firewallEngine, natTable, qosQueue, routes, state)
+		},
+	)
+	log.Info("ha enabled", map[string]any{
+		"node_id":   cfg.HA.NodeID,
+		"priority":  cfg.HA.Priority,
+		"bind":      cfg.HA.BindAddr,
+		"multicast": cfg.HA.MulticastAddr,
+		"peers":     cfg.HA.Peers,
+	})
+	return manager
+}
+
+func buildObservability(cfg *config.Config, log *logger.Logger) *observability.Store {
+	if !cfg.Observability.Enabled {
+		return nil
+	}
+	store := observability.NewStore(cfg.Observability.TracesLimit)
+	if log != nil {
+		log.Info("observability enabled", map[string]any{
+			"traces_limit": store.Limit(),
+		})
+	}
+	return store
+}
+
+func startAlerting(ctx context.Context, cfg *config.Config, metricsSrv *metrics.Metrics, log *logger.Logger) *observability.AlertStore {
+	if !cfg.Observability.Enabled || !cfg.Observability.AlertsEnabled {
+		return nil
+	}
+	store := observability.NewAlertStore(cfg.Observability.AlertsLimit)
+	interval := time.Duration(cfg.Observability.AlertIntervalSeconds) * time.Second
+	alertCfg := observability.AlertsConfig{
+		DropsThreshold:     cfg.Observability.DropsThreshold,
+		ErrorsThreshold:    cfg.Observability.ErrorsThreshold,
+		IDSAlertsThreshold: cfg.Observability.IDSAlertsThreshold,
+	}
+	if log != nil {
+		log.Info("alerts enabled", map[string]any{
+			"interval_seconds": cfg.Observability.AlertIntervalSeconds,
+		})
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		prev := metricsSrv.Snapshot()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				curr := metricsSrv.Snapshot()
+				alerts := observability.EvaluateAlerts(prev, curr, alertCfg)
+				for _, alert := range alerts {
+					store.Add(alert)
+				}
+				prev = curr
+			}
+		}
+	}()
+	return store
 }
 
 func runAPIServer(ctx context.Context, router *gin.Engine, cfg *config.Config, log *logger.Logger) error {

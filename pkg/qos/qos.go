@@ -127,6 +127,14 @@ func (q *QueueManager) Classes() []Class {
 	return out
 }
 
+func (q *QueueManager) ReplaceClasses(classes []Class) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.classes = normalizeClasses(classes)
+	q.queues = makeQueueMap(q.classes)
+	q.buckets = makeBucketMap(q.classes)
+}
+
 func (q *QueueManager) classify(pkt network.Packet) Class {
 	for i := range q.classes {
 		cl := q.classes[i]

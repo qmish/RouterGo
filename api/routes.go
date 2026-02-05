@@ -4,6 +4,9 @@ import "github.com/gin-gonic/gin"
 
 func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	apiGroup := router.Group("/api")
+	if handlers.Observability != nil {
+		apiGroup.Use(TraceMiddleware(handlers.Observability))
+	}
 	if handlers.Security != nil {
 		apiGroup.Use(AuthMiddleware(*handlers.Security, handlers.Log))
 		apiGroup.Use(AuditMiddleware(handlers.Log))
@@ -29,12 +32,17 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	apiGroup.GET("/dashboard/top/bandwidth", RequireRole(roleRead), handlers.GetDashboardTopBandwidth)
 	apiGroup.GET("/dashboard/sessions/tree", RequireRole(roleRead), handlers.GetDashboardSessionsTree)
 	apiGroup.GET("/dashboard/alerts", RequireRole(roleRead), handlers.GetDashboardAlerts)
+	apiGroup.GET("/observability/traces", RequireRole(roleRead), handlers.GetTraces)
+	apiGroup.GET("/observability/alerts", RequireRole(roleRead), handlers.GetAlerts)
 	apiGroup.GET("/p2p/peers", RequireRole(roleRead), handlers.GetP2PPeers)
 	apiGroup.GET("/p2p/routes", RequireRole(roleRead), handlers.GetP2PRoutes)
 	apiGroup.POST("/p2p/reset", RequireRole(roleOps), handlers.ResetP2P)
 	apiGroup.GET("/proxy/stats", RequireRole(roleRead), handlers.GetProxyStats)
 	apiGroup.POST("/proxy/cache/clear", RequireRole(roleOps), handlers.ClearProxyCache)
 	apiGroup.GET("/enrich/ip", RequireRole(roleRead), handlers.GetEnrichIP)
+	apiGroup.GET("/ha/status", RequireRole(roleRead), handlers.GetHAStatus)
+	apiGroup.GET("/ha/state", RequireRole(roleRead), handlers.GetHAState)
+	apiGroup.POST("/ha/state", RequireRole(roleOps), handlers.ApplyHAState)
 	apiGroup.GET("/nat", RequireRole(roleRead), handlers.GetNAT)
 	apiGroup.POST("/nat/reset", RequireRole(roleOps), handlers.ResetNATStats)
 	apiGroup.POST("/nat", RequireRole(roleOps), handlers.AddNATRule)

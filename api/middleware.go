@@ -1,11 +1,15 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"net/http"
 	"strings"
+	"time"
 
 	"router-go/internal/config"
 	"router-go/internal/logger"
+	"router-go/internal/observability"
 
 	"github.com/gin-gonic/gin"
 )
@@ -91,6 +95,46 @@ func AuditMiddleware(log *logger.Logger) gin.HandlerFunc {
 			"role":   role,
 		})
 	}
+}
+
+func TraceMiddleware(store *observability.Store) gin.HandlerFunc {
+	if store == nil {
+		return func(c *gin.Context) {
+			c.Next()
+		}
+	}
+	return func(c *gin.Context) {
+		start := time.Now()
+		traceID := strings.TrimSpace(c.GetHeader("X-Trace-Id"))
+		if traceID == "" {
+			traceID = generateTraceID()
+		}
+		c.Set("trace_id", traceID)
+		c.Header("X-Trace-Id", traceID)
+		c.Next()
+
+		path := c.FullPath()
+		if path == "" {
+			path = c.Request.URL.Path
+		}
+		store.Add(observability.Trace{
+			ID:         traceID,
+			Method:     c.Request.Method,
+			Path:       path,
+			Status:     c.Writer.Status(),
+			DurationMs: time.Since(start).Milliseconds(),
+			Timestamp:  time.Now().Unix(),
+			ClientIP:   c.ClientIP(),
+		})
+	}
+}
+
+func generateTraceID() string {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return hex.EncodeToString([]byte(time.Now().Format("20060102150405.000000000")))
+	}
+	return hex.EncodeToString(buf)
 }
 
 func roleAllowed(actual string, required string) bool {
