@@ -31,6 +31,23 @@ func TestGetPresets(t *testing.T) {
 	}
 }
 
+func TestGetPreset(t *testing.T) {
+	store := setupPresetStore(t)
+	h := &Handlers{
+		Presets: store,
+	}
+	router := gin.New()
+	RegisterRoutes(router, h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/presets/home", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+}
+
 func TestPreviewPreset(t *testing.T) {
 	store := setupPresetStore(t)
 	base := &config.Config{
@@ -45,6 +62,28 @@ func TestPreviewPreset(t *testing.T) {
 	RegisterRoutes(router, h)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/presets/home/preview", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+}
+
+func TestApplyPreset(t *testing.T) {
+	store := setupPresetStore(t)
+	base := &config.Config{
+		Interfaces: []config.InterfaceConfig{{Name: "eth0", IP: "192.168.1.1/24"}},
+		Routes:     []config.RouteConfig{{Destination: "0.0.0.0/0", Gateway: "192.0.2.1", Interface: "eth0", Metric: 100}},
+	}
+	h := &Handlers{
+		Presets:   store,
+		ConfigMgr: config.NewManager(base, nil),
+	}
+	router := gin.New()
+	RegisterRoutes(router, h)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/presets/home/apply", nil)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -118,6 +157,40 @@ func TestImportPresets(t *testing.T) {
 	}
 	if _, ok := store.Get("a"); !ok {
 		t.Fatalf("expected preset a")
+	}
+}
+
+func TestUpdatePresets(t *testing.T) {
+	store := setupPresetStore(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+  {"id":"updated-1","name":"Updated","settings":{"firewall":[{"chain":"INPUT","action":"ACCEPT","protocol":"ICMP"}]}}
+]`))
+	}))
+	defer server.Close()
+
+	base := &config.Config{
+		Interfaces: []config.InterfaceConfig{{Name: "eth0", IP: "192.168.1.1/24"}},
+		Routes:     []config.RouteConfig{{Destination: "0.0.0.0/0", Gateway: "192.0.2.1", Interface: "eth0", Metric: 100}},
+		Presets:    config.PresetsConfig{UpdateURL: server.URL},
+	}
+	h := &Handlers{
+		Presets:   store,
+		ConfigMgr: config.NewManager(base, nil),
+	}
+	router := gin.New()
+	RegisterRoutes(router, h)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/presets/update", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	if _, ok := store.Get("updated-1"); !ok {
+		t.Fatalf("expected updated preset")
 	}
 }
 
