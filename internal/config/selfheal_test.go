@@ -98,3 +98,27 @@ func TestDefaultHealthCheckHTTPFailure(t *testing.T) {
 		t.Fatalf("expected error on http failure")
 	}
 }
+
+func TestDefaultHealthCheckPingGatewaySuccess(t *testing.T) {
+	cfg := &Config{
+		SelfHeal: SelfHealConfig{
+			Enabled:     true,
+			PingGateway: "127.0.0.1",
+		},
+	}
+	if err := DefaultHealthCheck(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDefaultHealthCheckPingGatewayFailure(t *testing.T) {
+	cfg := &Config{
+		SelfHeal: SelfHealConfig{
+			Enabled:     true,
+			PingGateway: "invalid-ip",
+		},
+	}
+	if err := DefaultHealthCheck(cfg); err == nil {
+		t.Fatalf("expected error on ping gateway failure")
+	}
+}
