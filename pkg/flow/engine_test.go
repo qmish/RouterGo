@@ -55,3 +55,22 @@ func TestSessionsTree(t *testing.T) {
 		t.Fatalf("expected sorted by bytes desc")
 	}
 }
+
+func TestTopBandwidthIPv4Formatting(t *testing.T) {
+	engine := NewEngine()
+	engine.AddPacket(network.Packet{
+		Metadata: network.PacketMetadata{
+			SrcIP:  net.ParseIP("10.0.0.1"),
+			DstIP:  net.ParseIP("1.1.1.1"),
+			Length: 64,
+		},
+	})
+
+	top := engine.TopBandwidth(1)
+	if len(top) != 1 {
+		t.Fatalf("expected one entry")
+	}
+	if top[0].SrcIP != "10.0.0.1" {
+		t.Fatalf("unexpected src ip format: %s", top[0].SrcIP)
+	}
+}
