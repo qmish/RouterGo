@@ -238,7 +238,7 @@
         <div class="meta">/settings/nat</div>
         <table id="natTable">
           <thead>
-            <tr><th>Type</th><th>Src</th><th>Dst</th><th>Ports</th><th>To</th></tr>
+            <tr><th>Type</th><th>Src</th><th>Dst</th><th>Ports</th><th>To</th><th>Actions</th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -256,6 +256,8 @@
         </div>
         <div class="form-actions">
           <button id="addNATBtn">Добавить правило</button>
+          <button id="updateNATBtn" disabled>Обновить правило</button>
+          <button id="cancelNATEditBtn" disabled>Отмена</button>
         </div>
       </div>
 
@@ -926,7 +928,7 @@
       function renderNAT(rules) {
         const tbody = document.querySelector('#natTable tbody');
         if (!rules || rules.length === 0) {
-          renderEmptyRow(tbody, 5, 'Правила не найдены');
+          renderEmptyRow(tbody, 6, 'Правила не найдены');
           return;
         }
         tbody.innerHTML = rules.map(r => {
@@ -939,6 +941,26 @@
               <td>${r.dst_ip || ''}</td>
               <td>${ports}</td>
               <td>${to}</td>
+              <td>
+                <button class="nat-delete"
+                  data-type="${r.type || ''}"
+                  data-src-ip="${r.src_ip || ''}"
+                  data-dst-ip="${r.dst_ip || ''}"
+                  data-src-port="${r.src_port ?? 0}"
+                  data-dst-port="${r.dst_port ?? 0}"
+                  data-to-ip="${r.to_ip || ''}"
+                  data-to-port="${r.to_port ?? 0}"
+                >Удалить</button>
+                <button class="nat-edit"
+                  data-type="${r.type || ''}"
+                  data-src-ip="${r.src_ip || ''}"
+                  data-dst-ip="${r.dst_ip || ''}"
+                  data-src-port="${r.src_port ?? 0}"
+                  data-dst-port="${r.dst_port ?? 0}"
+                  data-to-ip="${r.to_ip || ''}"
+                  data-to-port="${r.to_port ?? 0}"
+                >Редактировать</button>
+              </td>
             </tr>
           `;
         }).join('');
@@ -1351,6 +1373,64 @@
         }
       });
 
+      let editingNAT = null;
+      function setNATEditState(state) {
+        editingNAT = state;
+        document.getElementById('updateNATBtn').disabled = !editingNAT;
+        document.getElementById('cancelNATEditBtn').disabled = !editingNAT;
+      }
+
+      function fillNATForm(rule) {
+        document.getElementById('natType').value = rule.type || 'SNAT';
+        document.getElementById('natSrcIP').value = rule.src_ip || '';
+        document.getElementById('natDstIP').value = rule.dst_ip || '';
+        document.getElementById('natSrcPort').value = rule.src_port ?? '';
+        document.getElementById('natDstPort').value = rule.dst_port ?? '';
+        document.getElementById('natToIP').value = rule.to_ip || '';
+        document.getElementById('natToPort').value = rule.to_port ?? '';
+      }
+
+      document.getElementById('updateNATBtn').addEventListener('click', async () => {
+        if (!editingNAT) {
+          return;
+        }
+        try {
+          await apiPut('/api/nat', {
+            old_type: editingNAT.type,
+            old_src_ip: editingNAT.src_ip,
+            old_dst_ip: editingNAT.dst_ip,
+            old_src_port: editingNAT.src_port,
+            old_dst_port: editingNAT.dst_port,
+            old_to_ip: editingNAT.to_ip,
+            old_to_port: editingNAT.to_port,
+            type: document.getElementById('natType').value,
+            src_ip: document.getElementById('natSrcIP').value.trim(),
+            dst_ip: document.getElementById('natDstIP').value.trim(),
+            src_port: readNumber('natSrcPort'),
+            dst_port: readNumber('natDstPort'),
+            to_ip: document.getElementById('natToIP').value.trim(),
+            to_port: readNumber('natToPort')
+          });
+          setNATEditState(null);
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('cancelNATEditBtn').addEventListener('click', () => {
+        setNATEditState(null);
+        fillNATForm({
+          type: 'SNAT',
+          src_ip: '',
+          dst_ip: '',
+          src_port: '',
+          dst_port: '',
+          to_ip: '',
+          to_port: ''
+        });
+      });
+
       document.getElementById('addQoSBtn').addEventListener('click', async () => {
         const name = document.getElementById('qosName').value.trim();
         if (!name) {
@@ -1367,6 +1447,44 @@
             priority: readNumber('qosPriority'),
             max_queue: readNumber('qosMaxQueue'),
             drop_policy: document.getElementById('qosDropPolicy').value.trim()
+          });
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('natTable').addEventListener('click', async (event) => {
+        const target = event.target;
+        if (target.classList.contains('nat-edit')) {
+          const rule = {
+            type: target.dataset.type || '',
+            src_ip: target.dataset.srcIp || '',
+            dst_ip: target.dataset.dstIp || '',
+            src_port: parseInt(target.dataset.srcPort || '0', 10) || 0,
+            dst_port: parseInt(target.dataset.dstPort || '0', 10) || 0,
+            to_ip: target.dataset.toIp || '',
+            to_port: parseInt(target.dataset.toPort || '0', 10) || 0
+          };
+          setNATEditState(rule);
+          fillNATForm(rule);
+          return;
+        }
+        if (!target.classList.contains('nat-delete')) {
+          return;
+        }
+        if (!confirm('Удалить правило NAT?')) {
+          return;
+        }
+        try {
+          await apiDelete('/api/nat', {
+            type: target.dataset.type || '',
+            src_ip: target.dataset.srcIp || '',
+            dst_ip: target.dataset.dstIp || '',
+            src_port: parseInt(target.dataset.srcPort || '0', 10) || 0,
+            dst_port: parseInt(target.dataset.dstPort || '0', 10) || 0,
+            to_ip: target.dataset.toIp || '',
+            to_port: parseInt(target.dataset.toPort || '0', 10) || 0
           });
           await refreshSettings();
         } catch (e) {

@@ -1014,6 +1014,138 @@ func (h *Handlers) GetNAT(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
+func (h *Handlers) DeleteNATRule(c *gin.Context) {
+	var req struct {
+		Type    string `json:"type"`
+		SrcIP   string `json:"src_ip"`
+		DstIP   string `json:"dst_ip"`
+		SrcPort int    `json:"src_port"`
+		DstPort int    `json:"dst_port"`
+		ToIP    string `json:"to_ip"`
+		ToPort  int    `json:"to_port"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+
+	var srcNet *net.IPNet
+	if req.SrcIP != "" {
+		_, parsed, err := net.ParseCIDR(req.SrcIP)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid src_ip"})
+			return
+		}
+		srcNet = parsed
+	}
+
+	var dstNet *net.IPNet
+	if req.DstIP != "" {
+		_, parsed, err := net.ParseCIDR(req.DstIP)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid dst_ip"})
+			return
+		}
+		dstNet = parsed
+	}
+
+	ok := h.NAT.RemoveRule(nat.Rule{
+		Type:    nat.Type(req.Type),
+		SrcNet:  srcNet,
+		DstNet:  dstNet,
+		SrcPort: req.SrcPort,
+		DstPort: req.DstPort,
+		ToIP:    net.ParseIP(req.ToIP),
+		ToPort:  req.ToPort,
+	})
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *Handlers) UpdateNATRule(c *gin.Context) {
+	var req struct {
+		OldType    string `json:"old_type"`
+		OldSrcIP   string `json:"old_src_ip"`
+		OldDstIP   string `json:"old_dst_ip"`
+		OldSrcPort int    `json:"old_src_port"`
+		OldDstPort int    `json:"old_dst_port"`
+		OldToIP    string `json:"old_to_ip"`
+		OldToPort  int    `json:"old_to_port"`
+		Type       string `json:"type"`
+		SrcIP      string `json:"src_ip"`
+		DstIP      string `json:"dst_ip"`
+		SrcPort    int    `json:"src_port"`
+		DstPort    int    `json:"dst_port"`
+		ToIP       string `json:"to_ip"`
+		ToPort     int    `json:"to_port"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+
+	parseNet := func(value string) (*net.IPNet, error) {
+		if strings.TrimSpace(value) == "" {
+			return nil, nil
+		}
+		_, parsed, err := net.ParseCIDR(value)
+		if err != nil {
+			return nil, err
+		}
+		return parsed, nil
+	}
+
+	oldSrc, err := parseNet(req.OldSrcIP)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid old_src_ip"})
+		return
+	}
+	oldDst, err := parseNet(req.OldDstIP)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid old_dst_ip"})
+		return
+	}
+	src, err := parseNet(req.SrcIP)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid src_ip"})
+		return
+	}
+	dst, err := parseNet(req.DstIP)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid dst_ip"})
+		return
+	}
+
+	ok := h.NAT.UpdateRule(
+		nat.Rule{
+			Type:    nat.Type(req.OldType),
+			SrcNet:  oldSrc,
+			DstNet:  oldDst,
+			SrcPort: req.OldSrcPort,
+			DstPort: req.OldDstPort,
+			ToIP:    net.ParseIP(req.OldToIP),
+			ToPort:  req.OldToPort,
+		},
+		nat.Rule{
+			Type:    nat.Type(req.Type),
+			SrcNet:  src,
+			DstNet:  dst,
+			SrcPort: req.SrcPort,
+			DstPort: req.DstPort,
+			ToIP:    net.ParseIP(req.ToIP),
+			ToPort:  req.ToPort,
+		},
+	)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
 func (h *Handlers) ResetNATStats(c *gin.Context) {
 	h.NAT.ResetStats()
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
