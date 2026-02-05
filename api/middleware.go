@@ -138,10 +138,18 @@ func generateTraceID() string {
 }
 
 func roleAllowed(actual string, required string) bool {
-	order := map[string]int{
-		roleRead:  1,
-		roleOps:   2,
-		roleAdmin: 3,
+	return roleOrder(strings.ToLower(actual)) >= roleOrder(strings.ToLower(required))
+}
+
+func roleOrder(role string) int {
+	switch role {
+	case roleRead:
+		return 1
+	case roleOps:
+		return 2
+	case roleAdmin:
+		return 3
+	default:
+		return 0
 	}
-	return order[strings.ToLower(actual)] >= order[strings.ToLower(required)]
 }
