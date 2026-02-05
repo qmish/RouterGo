@@ -58,8 +58,8 @@ func ParseIPv4Header(data []byte) (*IPv4Header, error) {
 
 	totalLength := int(binary.BigEndian.Uint16(data[2:4]))
 	proto := data[9]
-	src := net.IPv4(data[12], data[13], data[14], data[15])
-	dst := net.IPv4(data[16], data[17], data[18], data[19])
+	src := net.IPv4(data[12], data[13], data[14], data[15]).To4()
+	dst := net.IPv4(data[16], data[17], data[18], data[19]).To4()
 
 	return &IPv4Header{
 		Version:     version,
