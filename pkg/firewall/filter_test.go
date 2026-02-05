@@ -164,3 +164,69 @@ func TestFirewallProtocolKeyMatch(t *testing.T) {
 		t.Fatalf("expected ACCEPT, got %s", got)
 	}
 }
+
+func TestFirewallAddRuleAndRules(t *testing.T) {
+	engine := NewEngine(nil)
+	engine.AddRule(Rule{
+		Chain:  "INPUT",
+		Action: ActionAccept,
+	})
+	rules := engine.Rules()
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(rules))
+	}
+	rules[0].Chain = "OUTPUT"
+	if engine.Rules()[0].Chain != "INPUT" {
+		t.Fatalf("expected rules slice to be a copy")
+	}
+}
+
+func TestFirewallSetDefaultPolicy(t *testing.T) {
+	engine := NewEngine(nil)
+	engine.SetDefaultPolicy("input", ActionAccept)
+	engine.SetDefaultPolicy("OUTPUT", ActionDrop)
+	policies := engine.DefaultPolicies()
+	if policies["INPUT"] != ActionAccept {
+		t.Fatalf("expected INPUT=ACCEPT, got %s", policies["INPUT"])
+	}
+	if policies["OUTPUT"] != ActionDrop {
+		t.Fatalf("expected OUTPUT=DROP, got %s", policies["OUTPUT"])
+	}
+	policies["INPUT"] = ActionDrop
+	if engine.DefaultPolicies()["INPUT"] != ActionAccept {
+		t.Fatalf("expected default policies to be a copy")
+	}
+}
+
+func TestFirewallResetStats(t *testing.T) {
+	engine := NewEngine([]Rule{
+		{Chain: "FORWARD", Action: ActionAccept},
+	})
+	pkt := network.Packet{}
+	engine.Evaluate("FORWARD", pkt)
+	engine.Evaluate("INPUT", pkt)
+	engine.ResetStats()
+
+	stats := engine.RulesWithStats()
+	if stats[0].Hits != 0 {
+		t.Fatalf("expected rule hits reset to 0, got %d", stats[0].Hits)
+	}
+	hits := engine.ChainHits()
+	if hits["FORWARD"] != 0 || hits["INPUT"] != 0 {
+		t.Fatalf("expected chain hits reset to 0, got %v", hits)
+	}
+}
+
+func TestFirewallReplace(t *testing.T) {
+	engine := NewEngine(nil)
+	engine.Replace([]Rule{
+		{Chain: "INPUT", Action: ActionAccept},
+	}, map[string]Action{"INPUT": ActionDrop})
+	pkt := network.Packet{}
+	if got := engine.Evaluate("INPUT", pkt); got != ActionAccept {
+		t.Fatalf("expected ACCEPT, got %s", got)
+	}
+	if engine.DefaultPolicies()["INPUT"] != ActionDrop {
+		t.Fatalf("expected default policy INPUT=DROP")
+	}
+}
