@@ -1,6 +1,10 @@
 package metrics
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 func TestMetricsSnapshot(t *testing.T) {
 	m := New()
@@ -92,5 +96,19 @@ func TestMetricsSnapshot(t *testing.T) {
 	}
 	if s.ProxyCompress != 1 {
 		t.Fatalf("expected proxy compress 1, got %d", s.ProxyCompress)
+	}
+}
+
+
+func TestIncDropReasonIncrementsCounters(t *testing.T) {
+	m := NewWithRegistry(prometheus.NewRegistry())
+	m.IncDropReason("firewall")
+
+	s := m.Snapshot()
+	if s.Drops != 1 {
+		t.Fatalf("expected drops 1, got %d", s.Drops)
+	}
+	if s.DropsByReason["firewall"] != 1 {
+		t.Fatalf("expected firewall drop reason 1, got %d", s.DropsByReason["firewall"])
 	}
 }
