@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"router-go/pkg/network"
@@ -17,6 +18,12 @@ import (
 type linuxPacketIO struct {
 	fd      int
 	ifindex int
+}
+
+var packetBufPool = sync.Pool{
+	New: func() any {
+		return make([]byte, 65536)
+	},
 }
 
 func NewPacketIO(opts Options) (network.PacketIO, error) {
@@ -51,21 +58,29 @@ func NewPacketIO(opts Options) (network.PacketIO, error) {
 }
 
 func (p *linuxPacketIO) ReadPacket(ctx context.Context) (network.Packet, error) {
-	buf := make([]byte, 65536)
+	buf := packetBufPool.Get().([]byte)
 	for {
 		n, _, err := unix.Recvfrom(p.fd, buf, 0)
 		if err == nil {
-			return network.Packet{Data: append([]byte(nil), buf[:n]...)}, nil
+			data := buf[:n]
+			return network.Packet{
+				Data: data,
+				Release: func() {
+					packetBufPool.Put(buf)
+				},
+			}, nil
 		}
 		if errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK) {
 			select {
 			case <-ctx.Done():
+				packetBufPool.Put(buf)
 				return network.Packet{}, ctx.Err()
 			default:
 				time.Sleep(1 * time.Millisecond)
 				continue
 			}
 		}
+		packetBufPool.Put(buf)
 		return network.Packet{}, err
 	}
 }
