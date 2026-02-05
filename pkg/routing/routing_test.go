@@ -97,3 +97,28 @@ func TestRoutesReturnsCopy(t *testing.T) {
 		t.Fatalf("expected original routes unchanged, got %s", routes2[0].Interface)
 	}
 }
+
+func TestRemoveRoute(t *testing.T) {
+	_, aNet, _ := net.ParseCIDR("10.0.0.0/8")
+	_, bNet, _ := net.ParseCIDR("192.168.0.0/16")
+	table := NewTable([]Route{
+		{Destination: *aNet, Interface: "eth0", Metric: 10},
+		{Destination: *bNet, Interface: "eth1", Metric: 5, Gateway: net.ParseIP("192.0.2.1")},
+	})
+
+	ok := table.RemoveRoute(Route{
+		Destination: *bNet,
+		Interface:   "eth1",
+		Metric:      5,
+		Gateway:     net.ParseIP("192.0.2.1"),
+	})
+	if !ok {
+		t.Fatalf("expected route to be removed")
+	}
+	if len(table.Routes()) != 1 {
+		t.Fatalf("expected 1 remaining route")
+	}
+	if table.RemoveRoute(Route{Destination: *bNet, Interface: "eth1"}) {
+		t.Fatalf("expected remove to fail for missing route")
+	}
+}
