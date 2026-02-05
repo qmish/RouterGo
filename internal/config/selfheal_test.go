@@ -2,6 +2,8 @@ package config
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -48,5 +50,51 @@ func TestManagerRollbackLast(t *testing.T) {
 	}
 	if mgr.Current() != base {
 		t.Fatalf("expected rollback to base")
+	}
+}
+
+func TestDefaultHealthCheckDisabled(t *testing.T) {
+	cfg := &Config{
+		SelfHeal: SelfHealConfig{
+			Enabled:      false,
+			HTTPCheckURL: "http://invalid",
+		},
+	}
+	if err := DefaultHealthCheck(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDefaultHealthCheckHTTPSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	cfg := &Config{
+		SelfHeal: SelfHealConfig{
+			Enabled:      true,
+			HTTPCheckURL: server.URL,
+		},
+	}
+	if err := DefaultHealthCheck(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDefaultHealthCheckHTTPFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cfg := &Config{
+		SelfHeal: SelfHealConfig{
+			Enabled:      true,
+			HTTPCheckURL: server.URL,
+		},
+	}
+	if err := DefaultHealthCheck(cfg); err == nil {
+		t.Fatalf("expected error on http failure")
 	}
 }
