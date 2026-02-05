@@ -21,6 +21,7 @@ import (
 	"router-go/internal/logger"
 	"router-go/internal/metrics"
 	"router-go/internal/observability"
+	"router-go/internal/presets"
 	"router-go/internal/platform"
 	"router-go/pkg/firewall"
 	"router-go/pkg/enrich"
@@ -82,6 +83,7 @@ func main() {
 	haMgr := buildHA(cfg, log, routeTable, firewallEngine, natTable, qosQueue)
 	obsStore := buildObservability(cfg, log)
 	alertStore := startAlerting(ctx, cfg, metricsSrv, log)
+	presetStore := loadPresets(cfg, log)
 
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -106,6 +108,7 @@ func main() {
 		HA:        haMgr,
 		Observability: obsStore,
 		Alerts:    alertStore,
+		Presets:   presetStore,
 	}
 	api.RegisterRoutes(router, handlers)
 	if cfg.Observability.PprofEnabled {
@@ -587,6 +590,20 @@ func buildObservability(cfg *config.Config, log *logger.Logger) *observability.S
 		log.Info("observability enabled", map[string]any{
 			"traces_limit": store.Limit(),
 		})
+	}
+	return store
+}
+
+func loadPresets(cfg *config.Config, log *logger.Logger) *presets.Store {
+	store, err := presets.LoadStore(cfg.Presets.Dir)
+	if err != nil {
+		if log != nil {
+			log.Warn("presets load failed", map[string]any{"err": err.Error()})
+		}
+		return nil
+	}
+	if log != nil {
+		log.Info("presets loaded", map[string]any{"count": len(store.List())})
 	}
 	return store
 }

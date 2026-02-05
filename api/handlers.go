@@ -12,6 +12,7 @@ import (
 	"router-go/internal/logger"
 	"router-go/internal/metrics"
 	"router-go/internal/observability"
+	"router-go/internal/presets"
 	"router-go/pkg/firewall"
 	"router-go/pkg/flow"
 	"router-go/pkg/enrich"
@@ -44,6 +45,7 @@ type Handlers struct {
 	Metrics   *metrics.Metrics
 	Observability *observability.Store
 	Alerts        *observability.AlertStore
+	Presets   *presets.Store
 }
 
 func (h *Handlers) GetRoutes(c *gin.Context) {

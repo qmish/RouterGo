@@ -163,3 +163,6 @@ observability:
 
 logging:
   level: info
+
+presets:
+  dir: presets

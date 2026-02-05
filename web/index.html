@@ -20,17 +20,26 @@
       .nav button { padding: 6px 10px; border-radius: 8px; border:1px solid #e5e7eb; background:#fff; cursor:pointer; }
       .nav button.active { background:#eef2ff; border-color:#c7d2fe; }
       .hidden { display: none; }
+      .preset-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+      .preset-card { background:#fff; border-radius: 10px; padding: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+      .preset-icon { font-size: 28px; }
+      .preset-actions { display:flex; gap:8px; margin-top: 8px; }
+      .preset-summary table { font-size: 12px; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
   <body>
-    <h1>RouterGo Dashboard</h1>
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap: wrap;">
+      <h1 style="margin-right:auto;">RouterGo Dashboard</h1>
+      <button id="openPresetsBtn">Настроить по шаблону</button>
+    </div>
     <div class="meta">Автообновление</div>
     <div class="nav">
       <button data-tab="overview">Обзор</button>
       <button data-tab="traffic">Трафик</button>
       <button data-tab="sessions">Сессии</button>
       <button data-tab="alerts">Алерты</button>
+      <button data-tab="presets">Пресеты</button>
     </div>
     <div style="margin: 10px 0; display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
       <button id="refreshBtn">Обновить сейчас</button>
@@ -130,6 +139,18 @@
       </div>
     </div>
 
+    <div id="tab-presets" class="grid gridWide" style="margin-top: 12px;">
+      <div class="card">
+        <h3>Быстрая настройка → Пресеты</h3>
+        <div class="meta">Выберите профиль и посмотрите сводку изменений.</div>
+        <div id="presetsGrid" class="preset-grid" style="margin-top: 10px;"></div>
+      </div>
+      <div class="card">
+        <h3>Сводка пресета</h3>
+        <div id="presetDetail" class="meta">Выберите пресет</div>
+      </div>
+    </div>
+
     <script>
       const topCtx = document.getElementById('topChart');
       const historyCtx = document.getElementById('historyChart');
@@ -147,6 +168,8 @@
       let history = [];
       let refreshTimer = null;
       const storageKey = 'routergo_ui';
+      let presetsList = [];
+      let selectedPresetId = '';
 
       function demoTop() {
         const labels = Array.from({length: 8}, (_, i) => `10.0.0.${i+1}`);
@@ -206,6 +229,32 @@
         const res = await fetch('/api/stats');
         if (!res.ok) {
           return null;
+        }
+        return res.json();
+      }
+
+      async function loadPresets() {
+        const res = await fetch('/api/presets');
+        if (!res.ok) {
+          return [];
+        }
+        return res.json();
+      }
+
+      async function previewPreset(id) {
+        const res = await fetch(`/api/presets/${encodeURIComponent(id)}/preview`, { method: 'POST' });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || 'Не удалось получить сводку');
+        }
+        return res.json();
+      }
+
+      async function applyPreset(id) {
+        const res = await fetch(`/api/presets/${encodeURIComponent(id)}/apply`, { method: 'POST' });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || 'Не удалось применить пресет');
         }
         return res.json();
       }
@@ -338,6 +387,86 @@
         select.value = options.includes(current) ? current : '';
       }
 
+      function renderPresets(list) {
+        const grid = document.getElementById('presetsGrid');
+        if (!Array.isArray(list) || list.length === 0) {
+          grid.innerHTML = '<div class="meta">Пресеты не найдены</div>';
+          return;
+        }
+        grid.innerHTML = list.map(p => `
+          <div class="preset-card">
+            <div class="preset-icon">${p.icon || '⚙️'}</div>
+            <h3>${p.name}</h3>
+            <div class="meta">${p.description || ''}</div>
+            <div class="preset-actions">
+              <button data-id="${p.id}" class="preset-preview">Сводка</button>
+              <button data-id="${p.id}" class="preset-apply">Применить</button>
+            </div>
+          </div>
+        `).join('');
+        grid.querySelectorAll('.preset-preview').forEach(btn => {
+          btn.addEventListener('click', () => showPresetSummary(btn.dataset.id));
+        });
+        grid.querySelectorAll('.preset-apply').forEach(btn => {
+          btn.addEventListener('click', () => confirmApplyPreset(btn.dataset.id));
+        });
+      }
+
+      function renderPresetDetail(preset, summary, error) {
+        const detail = document.getElementById('presetDetail');
+        if (error) {
+          detail.innerHTML = `<div class="meta">${error}</div>`;
+          return;
+        }
+        if (!preset || !summary) {
+          detail.innerHTML = '<div class="meta">Выберите пресет</div>';
+          return;
+        }
+        const extras = preset.extras || {};
+        const extrasList = Object.keys(extras).map(k => `<div class="meta"><strong>${k}:</strong> ${Array.isArray(extras[k]) ? extras[k].join(', ') : extras[k]}</div>`).join('');
+        detail.innerHTML = `
+          <div><strong>${preset.name}</strong></div>
+          <div class="meta">${preset.description || ''}</div>
+          <div class="preset-summary" style="margin-top:8px;">
+            <table>
+              <thead><tr><th>Раздел</th><th>Было</th><th>Станет</th></tr></thead>
+              <tbody>
+                <tr><td>Маршруты</td><td>${summary.routes_before}</td><td>${summary.routes_after}</td></tr>
+                <tr><td>Firewall</td><td>${summary.firewall_rules_before}</td><td>${summary.firewall_rules_after}</td></tr>
+                <tr><td>NAT</td><td>${summary.nat_rules_before}</td><td>${summary.nat_rules_after}</td></tr>
+                <tr><td>QoS</td><td>${summary.qos_classes_before}</td><td>${summary.qos_classes_after}</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="margin-top:8px;">${extrasList}</div>
+        `;
+      }
+
+      async function showPresetSummary(id) {
+        selectedPresetId = id;
+        try {
+          const data = await previewPreset(id);
+          renderPresetDetail(data.preset, data.summary);
+        } catch (e) {
+          renderPresetDetail(null, null, e.message);
+        }
+      }
+
+      async function confirmApplyPreset(id) {
+        try {
+          const data = await previewPreset(id);
+          const ok = confirm(`Применить пресет "${data.preset.name}"?`);
+          if (!ok) {
+            return;
+          }
+          await applyPreset(id);
+          renderPresetDetail(data.preset, data.summary);
+          alert('Пресет применён');
+        } catch (e) {
+          alert(e.message);
+        }
+      }
+
       async function refreshAll() {
         try {
           const [top, sessions, alerts, stats, proxyStats] = await Promise.all([
@@ -411,9 +540,19 @@
           saveSettings();
         });
       });
+      document.getElementById('openPresetsBtn').addEventListener('click', () => {
+        setTab('presets');
+        saveSettings();
+      });
 
       loadSettings();
       refreshAll();
+      loadPresets().then(list => {
+        presetsList = list;
+        renderPresets(list);
+      }).catch(() => {
+        renderPresets([]);
+      });
       function startTimer() {
         if (refreshTimer) {
           clearInterval(refreshTimer);

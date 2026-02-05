@@ -1,0 +1,36 @@
+{
+  "id": "home",
+  "name": "Домашний роутер",
+  "description": "Простая настройка для квартиры или частного дома.",
+  "icon": "🏠",
+  "settings": {
+    "interfaces": [
+      { "name": "eth0", "ip": "192.168.1.1/24" }
+    ],
+    "routes": [
+      { "destination": "0.0.0.0/0", "gateway": "192.168.1.254", "interface": "eth0", "metric": 100 }
+    ],
+    "firewall_defaults": { "input": "DROP", "output": "ACCEPT", "forward": "DROP" },
+    "firewall": [
+      { "chain": "INPUT", "action": "ACCEPT", "protocol": "ICMP" },
+      { "chain": "OUTPUT", "action": "ACCEPT", "protocol": "TCP", "dst_port": 80 },
+      { "chain": "OUTPUT", "action": "ACCEPT", "protocol": "TCP", "dst_port": 443 },
+      { "chain": "OUTPUT", "action": "ACCEPT", "protocol": "UDP", "dst_port": 53 },
+      { "chain": "OUTPUT", "action": "ACCEPT", "protocol": "TCP", "dst_port": 53 }
+    ],
+    "nat": [
+      { "type": "SNAT", "src_ip": "192.168.1.0/24", "to_ip": "203.0.113.10" }
+    ],
+    "qos": [
+      { "name": "voip", "protocol": "UDP", "dst_port": 5060, "rate_limit_kbps": 512, "priority": 10, "max_queue": 100, "drop_policy": "tail" },
+      { "name": "video_call", "protocol": "UDP", "dst_port": 3478, "rate_limit_kbps": 2048, "priority": 8, "max_queue": 200, "drop_policy": "tail" }
+    ]
+  },
+  "extras": {
+    "wan": "DHCP клиент на внешнем интерфейсе",
+    "lan": "192.168.1.0/24, DHCP 192.168.1.10-100",
+    "wifi": "WPA2-PSK (случайный пароль)",
+    "services_disabled": ["TFTP", "SNMP"],
+    "options": ["Скрыть сеть (SSID)", "Родительский контроль"]
+  }
+}

@@ -27,6 +27,7 @@ type Config struct {
 	Observability    ObservabilityConfig    `mapstructure:"observability"`
 	Performance      PerformanceConfig      `mapstructure:"performance"`
 	Logging          LoggingConfig          `mapstructure:"logging"`
+	Presets          PresetsConfig          `mapstructure:"presets"`
 }
 
 type InterfaceConfig struct {
@@ -235,6 +236,10 @@ type LoggingConfig struct {
 	Level string `mapstructure:"level"`
 }
 
+type PresetsConfig struct {
+	Dir string `mapstructure:"dir"`
+}
+
 func Load(path string) (*Config, error) {
 	v := viper.New()
 	v.SetConfigFile(path)
@@ -385,6 +390,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.HA.NodeID == "" {
 		cfg.HA.NodeID = "node-1"
 	}
+	if cfg.Presets.Dir == "" {
+		cfg.Presets.Dir = "presets"
+	}
 }
 
 func validate(cfg *Config) error {
@@ -399,4 +407,8 @@ func validate(cfg *Config) error {
 		}
 	}
 	return nil
+}
+
+func Validate(cfg *Config) error {
+	return validate(cfg)
 }
