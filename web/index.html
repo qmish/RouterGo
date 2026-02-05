@@ -818,6 +818,10 @@
         return apiGet('/api/qos');
       }
 
+      async function loadInterfaces() {
+        return apiGet('/api/interfaces');
+      }
+
       function renderEmptyRow(tbody, cols, text) {
         tbody.innerHTML = `<tr><td colspan="${cols}" class="muted">${text}</td></tr>`;
       }
@@ -921,18 +925,19 @@
 
       async function refreshSettings() {
         try {
-          const [routes, firewall, nat, qos, defaults] = await Promise.all([
+          const [routes, firewall, nat, qos, defaults, interfaces] = await Promise.all([
             loadRoutes(),
             loadFirewall(),
             loadNAT(),
             loadQoS(),
-            loadFirewallDefaults()
+            loadFirewallDefaults(),
+            loadInterfaces()
           ]);
           renderRoutes(routes);
           renderFirewall(firewall);
           renderNAT(nat);
           renderQoS(qos);
-          renderInterfaces([]);
+          renderInterfaces(interfaces);
           if (defaults) {
             const chain = document.getElementById('fwDefaultChain').value;
             if (defaults[chain]) {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"router-go/internal/metrics"
+	"router-go/internal/config"
 	"router-go/pkg/ids"
 	"router-go/pkg/ha"
 	"router-go/pkg/firewall"
@@ -234,6 +235,36 @@ func TestAddRouteInvalid(t *testing.T) {
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestGetInterfaces(t *testing.T) {
+	cfg := &config.Config{
+		Interfaces: []config.InterfaceConfig{
+			{Name: "eth0", IP: "10.0.0.1/24"},
+			{Name: "wan0", IP: "203.0.113.10/32"},
+		},
+	}
+	h := &Handlers{
+		Routes:    routing.NewTable(nil),
+		NAT:       nat.NewTable(nil),
+		QoS:       qos.NewQueueManager(nil),
+		Metrics:   metrics.NewWithRegistry(prometheus.NewRegistry()),
+		ConfigMgr: config.NewManager(cfg, nil),
+	}
+	router := setupRouter(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/interfaces", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("eth0")) {
+		t.Fatalf("expected interface in response")
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("203.0.113.10/32")) {
+		t.Fatalf("expected interface ip in response")
 	}
 }
 

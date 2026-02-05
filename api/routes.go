@@ -14,6 +14,7 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 		apiGroup.Use(AuditMiddleware(handlers.Log))
 	}
 
+	apiGroup.GET("/interfaces", RequireRole(roleRead), handlers.GetInterfaces)
 	apiGroup.GET("/routes", RequireRole(roleRead), handlers.GetRoutes)
 	apiGroup.POST("/routes", RequireRole(roleOps), handlers.AddRoute)
 	apiGroup.POST("/firewall", RequireRole(roleOps), handlers.AddFirewallRule)
