@@ -66,6 +66,34 @@ func (t *Table) AddRule(rule Rule) {
 	t.hits = append(t.hits, 0)
 }
 
+func (t *Table) RemoveRule(match Rule) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for i, rule := range t.rules {
+		if rulesEqual(rule, normalizeRule(match)) {
+			t.rules = append(t.rules[:i], t.rules[i+1:]...)
+			t.hits = append(t.hits[:i], t.hits[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+func (t *Table) UpdateRule(old Rule, updated Rule) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for i, rule := range t.rules {
+		if rulesEqual(rule, normalizeRule(old)) {
+			t.rules[i] = normalizeRule(updated)
+			if i < len(t.hits) {
+				t.hits[i] = 0
+			}
+			return true
+		}
+	}
+	return false
+}
+
 func (t *Table) Rules() []Rule {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -312,4 +340,48 @@ func normalizeRules(rules []Rule) []Rule {
 		out = append(out, normalizeRule(rule))
 	}
 	return out
+}
+
+func rulesEqual(a Rule, b Rule) bool {
+	if a.Type != b.Type {
+		return false
+	}
+	if a.SrcPort != b.SrcPort || a.DstPort != b.DstPort || a.ToPort != b.ToPort {
+		return false
+	}
+	if !ipNetEqual(a.SrcNet, b.SrcNet) || !ipNetEqual(a.DstNet, b.DstNet) {
+		return false
+	}
+	if !ipEqual(a.ToIP, b.ToIP) {
+		return false
+	}
+	return true
+}
+
+func ipNetEqual(a *net.IPNet, b *net.IPNet) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if len(a.Mask) != len(b.Mask) {
+		return false
+	}
+	for i := range a.Mask {
+		if a.Mask[i] != b.Mask[i] {
+			return false
+		}
+	}
+	return ipEqual(a.IP, b.IP)
+}
+
+func ipEqual(a net.IP, b net.IP) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.Equal(b)
 }

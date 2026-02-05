@@ -54,6 +54,8 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	apiGroup.GET("/nat", RequireRole(roleRead), handlers.GetNAT)
 	apiGroup.POST("/nat/reset", RequireRole(roleOps), handlers.ResetNATStats)
 	apiGroup.POST("/nat", RequireRole(roleOps), handlers.AddNATRule)
+	apiGroup.DELETE("/nat", RequireRole(roleOps), handlers.DeleteNATRule)
+	apiGroup.PUT("/nat", RequireRole(roleOps), handlers.UpdateNATRule)
 	apiGroup.GET("/qos", RequireRole(roleRead), handlers.GetQoS)
 	apiGroup.POST("/qos", RequireRole(roleOps), handlers.AddQoSClass)
 	apiGroup.GET("/presets", RequireRole(roleRead), handlers.GetPresets)

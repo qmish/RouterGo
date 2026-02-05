@@ -432,3 +432,56 @@ func TestReplaceRulesResetsConnsAndHits(t *testing.T) {
 		t.Fatalf("expected hits reset after replace, got %+v", stats)
 	}
 }
+
+func TestRemoveRule(t *testing.T) {
+	_, srcNet, _ := net.ParseCIDR("10.0.0.0/8")
+	table := NewTable([]Rule{
+		{
+			Type:   TypeSNAT,
+			SrcNet: srcNet,
+			ToIP:   net.ParseIP("203.0.113.10"),
+			ToPort: 40000,
+		},
+	})
+	ok := table.RemoveRule(Rule{
+		Type:   TypeSNAT,
+		SrcNet: srcNet,
+		ToIP:   net.ParseIP("203.0.113.10"),
+		ToPort: 40000,
+	})
+	if !ok {
+		t.Fatalf("expected rule removed")
+	}
+	if len(table.Rules()) != 0 {
+		t.Fatalf("expected no rules left")
+	}
+	if table.RemoveRule(Rule{Type: TypeSNAT}) {
+		t.Fatalf("expected remove to fail for missing rule")
+	}
+}
+
+func TestUpdateRule(t *testing.T) {
+	_, srcNet, _ := net.ParseCIDR("10.0.0.0/8")
+	table := NewTable([]Rule{
+		{
+			Type:   TypeSNAT,
+			SrcNet: srcNet,
+			ToIP:   net.ParseIP("203.0.113.10"),
+			ToPort: 40000,
+		},
+	})
+	ok := table.UpdateRule(
+		Rule{Type: TypeSNAT, SrcNet: srcNet, ToIP: net.ParseIP("203.0.113.10"), ToPort: 40000},
+		Rule{Type: TypeSNAT, SrcNet: srcNet, ToIP: net.ParseIP("203.0.113.11"), ToPort: 40001},
+	)
+	if !ok {
+		t.Fatalf("expected update to succeed")
+	}
+	rules := table.Rules()
+	if rules[0].ToPort != 40001 || !rules[0].ToIP.Equal(net.ParseIP("203.0.113.11")) {
+		t.Fatalf("unexpected updated rule: %+v", rules[0])
+	}
+	if table.UpdateRule(Rule{Type: TypeDNAT}, Rule{Type: TypeDNAT}) {
+		t.Fatalf("expected update to fail for missing rule")
+	}
+}
