@@ -162,6 +162,41 @@ func TestApplyPresetInvalidProtocol(t *testing.T) {
 	}
 }
 
+func TestApplyPresetWithOverrides(t *testing.T) {
+	base := &config.Config{
+		Interfaces: []config.InterfaceConfig{
+			{Name: "eth0", IP: "192.168.1.1/24"},
+		},
+		Routes: []config.RouteConfig{
+			{Destination: "0.0.0.0/0", Gateway: "192.0.2.1", Interface: "eth0", Metric: 100},
+		},
+	}
+	preset := Preset{
+		ID:   "home",
+		Name: "Home",
+		Settings: PresetSettings{
+			Firewall: []config.FirewallRuleConfig{
+				{Chain: "INPUT", Action: "ACCEPT", Protocol: "ICMP"},
+			},
+		},
+	}
+
+	updated, _, err := ApplyPresetWithOverrides(base, preset, Overrides{
+		InterfaceName:  "eth0",
+		InterfaceIP:    "192.168.10.1/24",
+		DefaultGateway: "192.168.10.254",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if updated.Interfaces[0].IP != "192.168.10.1/24" {
+		t.Fatalf("expected interface ip override")
+	}
+	if updated.Routes[0].Gateway != "192.168.10.254" {
+		t.Fatalf("expected gateway override")
+	}
+}
+
 func TestStoreSavePreset(t *testing.T) {
 	dir := t.TempDir()
 	store, err := LoadStore(dir)
