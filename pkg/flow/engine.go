@@ -1,6 +1,7 @@
 package flow
 
 import (
+	"net"
 	"sort"
 	"sync"
 
@@ -19,47 +20,47 @@ type SessionEntry struct {
 }
 
 type Engine struct {
-	mu       sync.Mutex
-	bySrc    map[string]uint64
-	sessions map[string]map[string]*SessionEntry
+	mu       sync.RWMutex
+	bySrc    map[ipKey]uint64
+	sessions map[ipKey]map[ipKey]*SessionEntry
 }
 
 func NewEngine() *Engine {
 	return &Engine{
-		bySrc:    map[string]uint64{},
-		sessions: map[string]map[string]*SessionEntry{},
+		bySrc:    map[ipKey]uint64{},
+		sessions: map[ipKey]map[ipKey]*SessionEntry{},
 	}
 }
 
 func (e *Engine) AddPacket(pkt network.Packet) {
-	src := pkt.Metadata.SrcIP.String()
-	dst := pkt.Metadata.DstIP.String()
-	if src == "" || dst == "" {
+	srcKey := ipToKey(pkt.Metadata.SrcIP)
+	dstKey := ipToKey(pkt.Metadata.DstIP)
+	if srcKey == (ipKey{}) || dstKey == (ipKey{}) {
 		return
 	}
 	size := packetSize(pkt)
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.bySrc[src] += size
-	if _, ok := e.sessions[src]; !ok {
-		e.sessions[src] = map[string]*SessionEntry{}
+	e.bySrc[srcKey] += size
+	if _, ok := e.sessions[srcKey]; !ok {
+		e.sessions[srcKey] = map[ipKey]*SessionEntry{}
 	}
-	entry := e.sessions[src][dst]
+	entry := e.sessions[srcKey][dstKey]
 	if entry == nil {
-		entry = &SessionEntry{DstIP: dst}
-		e.sessions[src][dst] = entry
+		entry = &SessionEntry{DstIP: keyToString(dstKey)}
+		e.sessions[srcKey][dstKey] = entry
 	}
 	entry.Packets++
 	entry.Bytes += size
 }
 
 func (e *Engine) TopBandwidth(limit int) []TopEntry {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	out := make([]TopEntry, 0, len(e.bySrc))
-	for src, bytes := range e.bySrc {
-		out = append(out, TopEntry{SrcIP: src, Bytes: bytes})
+	for srcKey, bytes := range e.bySrc {
+		out = append(out, TopEntry{SrcIP: keyToString(srcKey), Bytes: bytes})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].Bytes > out[j].Bytes
@@ -71,10 +72,10 @@ func (e *Engine) TopBandwidth(limit int) []TopEntry {
 }
 
 func (e *Engine) SessionsTree() map[string][]SessionEntry {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	out := make(map[string][]SessionEntry, len(e.sessions))
-	for src, dsts := range e.sessions {
+	for srcKey, dsts := range e.sessions {
 		list := make([]SessionEntry, 0, len(dsts))
 		for _, entry := range dsts {
 			list = append(list, *entry)
@@ -82,7 +83,7 @@ func (e *Engine) SessionsTree() map[string][]SessionEntry {
 		sort.Slice(list, func(i, j int) bool {
 			return list[i].Bytes > list[j].Bytes
 		})
-		out[src] = list
+		out[keyToString(srcKey)] = list
 	}
 	return out
 }
@@ -92,4 +93,33 @@ func packetSize(pkt network.Packet) uint64 {
 		return uint64(pkt.Metadata.Length)
 	}
 	return uint64(len(pkt.Data))
+}
+
+type ipKey [16]byte
+
+func ipToKey(ip net.IP) ipKey {
+	var out ipKey
+	if ip == nil {
+		return out
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		out[10] = 0xff
+		out[11] = 0xff
+		copy(out[12:], ip4)
+		return out
+	}
+	if ip16 := ip.To16(); ip16 != nil {
+		copy(out[:], ip16)
+	}
+	return out
+}
+
+func keyToString(key ipKey) string {
+	if key == (ipKey{}) {
+		return ""
+	}
+	if key[10] == 0xff && key[11] == 0xff {
+		return net.IPv4(key[12], key[13], key[14], key[15]).String()
+	}
+	return net.IP(key[:]).String()
 }
