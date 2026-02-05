@@ -29,6 +29,8 @@ type Rule struct {
 	PayloadContains string
 	Priority        int
 	Enabled         bool
+	protoKey        uint8
+	hasProto        bool
 }
 
 type Alert struct {
@@ -111,7 +113,7 @@ func (e *Engine) AddRule(rule Rule) {
 	if rule.Action == "" {
 		rule.Action = ActionAlert
 	}
-	e.rules = append(e.rules, rule)
+	e.rules = append(e.rules, normalizeRule(rule))
 	e.sortRules()
 }
 
@@ -124,7 +126,7 @@ func (e *Engine) UpdateRule(name string, rule Rule) bool {
 				rule.Action = ActionAlert
 			}
 			rule.Name = name
-			e.rules[i] = rule
+			e.rules[i] = normalizeRule(rule)
 			e.sortRules()
 			return true
 		}
@@ -222,11 +224,12 @@ func (e *Engine) Detect(pkt network.Packet) Result {
 }
 
 func (e *Engine) matchSignature(pkt network.Packet) (Result, bool) {
+	packetProto := packetProtoKey(pkt.Metadata)
 	for _, rule := range e.rules {
 		if !rule.Enabled {
 			continue
 		}
-		if rule.Protocol != "" && !strings.EqualFold(rule.Protocol, pkt.Metadata.Protocol) {
+		if rule.hasProto && rule.protoKey != packetProto {
 			continue
 		}
 		if rule.SrcNet != nil && pkt.Metadata.SrcIP != nil && !rule.SrcNet.Contains(pkt.Metadata.SrcIP) {
@@ -264,6 +267,34 @@ func (e *Engine) matchSignature(pkt network.Packet) (Result, bool) {
 		}, true
 	}
 	return Result{}, false
+}
+
+func normalizeRule(rule Rule) Rule {
+	rule.protoKey = protoToKey(rule.Protocol)
+	rule.hasProto = rule.Protocol != ""
+	return rule
+}
+
+func protoToKey(proto string) uint8 {
+	switch {
+	case strings.EqualFold(proto, "TCP"):
+		return 6
+	case strings.EqualFold(proto, "UDP"):
+		return 17
+	case strings.EqualFold(proto, "ICMP"):
+		return 1
+	case strings.EqualFold(proto, "ICMPv6"):
+		return 58
+	default:
+		return 0
+	}
+}
+
+func packetProtoKey(meta network.PacketMetadata) uint8 {
+	if meta.ProtocolNum != 0 {
+		return meta.ProtocolNum
+	}
+	return protoToKey(meta.Protocol)
 }
 
 func (e *Engine) matchBehavior(pkt network.Packet) (Result, bool) {
