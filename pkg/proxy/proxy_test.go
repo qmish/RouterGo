@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -198,5 +199,38 @@ func TestProxyCallbacksAndClearCache(t *testing.T) {
 	p.ClearCache()
 	if p.Stats().CacheSize != 0 {
 		t.Fatalf("expected cache cleared")
+	}
+}
+
+func TestProxyPassNonGet(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer upstream.Close()
+
+	p, err := NewProxy(Config{Upstream: upstream.URL, CacheSize: 10, CacheTTLSeconds: 60})
+	if err != nil {
+		t.Fatalf("proxy init failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "http://proxy.local/test", nil)
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, req)
+	if upstreamCalls != 1 {
+		t.Fatalf("expected upstream called once, got %d", upstreamCalls)
+	}
+	if p.Stats().CacheHits != 0 || p.Stats().CacheMiss != 0 {
+		t.Fatalf("expected cache stats unchanged for non-get")
+	}
+}
+
+func TestStartHTTPServerInvalidAddr(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := StartHTTPServer(ctx, "bad:addr", http.NewServeMux()); err == nil {
+		t.Fatalf("expected error for invalid addr")
 	}
 }
