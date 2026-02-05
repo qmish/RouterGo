@@ -1204,6 +1204,66 @@ func (h *Handlers) GetQoS(c *gin.Context) {
 	c.JSON(http.StatusOK, classes)
 }
 
+func (h *Handlers) DeleteQoSClass(c *gin.Context) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+	if !h.QoS.RemoveClass(req.Name) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "class not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *Handlers) UpdateQoSClass(c *gin.Context) {
+	var req struct {
+		OldName       string `json:"old_name"`
+		Name          string `json:"name"`
+		Protocol      string `json:"protocol"`
+		SrcPort       int    `json:"src_port"`
+		DstPort       int    `json:"dst_port"`
+		RateLimitKbps int    `json:"rate_limit_kbps"`
+		Priority      int    `json:"priority"`
+		MaxQueue      int    `json:"max_queue"`
+		DropPolicy    string `json:"drop_policy"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	if strings.TrimSpace(req.OldName) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "old_name is required"})
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+	ok := h.QoS.UpdateClass(req.OldName, qos.Class{
+		Name:          req.Name,
+		Protocol:      req.Protocol,
+		SrcPort:       req.SrcPort,
+		DstPort:       req.DstPort,
+		RateLimitKbps: req.RateLimitKbps,
+		Priority:      req.Priority,
+		MaxQueue:      req.MaxQueue,
+		DropPolicy:    req.DropPolicy,
+	})
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "class not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
 func (h *Handlers) AddQoSClass(c *gin.Context) {
 	var req struct {
 		Name          string `json:"name"`

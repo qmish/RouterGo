@@ -265,3 +265,45 @@ func TestAppendOrReplaceClass(t *testing.T) {
 		t.Fatalf("expected appended class three")
 	}
 }
+
+func TestQueueRemoveClass(t *testing.T) {
+	q := NewQueueManager([]Class{{Name: "voice", Priority: 10}})
+	if !q.RemoveClass("voice") {
+		t.Fatalf("expected class removed")
+	}
+	if !containsClass(q.Classes(), "default") {
+		t.Fatalf("expected default class to remain")
+	}
+	if q.RemoveClass("default") {
+		t.Fatalf("expected default class to be protected")
+	}
+	if q.RemoveClass("missing") {
+		t.Fatalf("expected remove to fail for missing class")
+	}
+}
+
+func TestQueueUpdateClass(t *testing.T) {
+	q := NewQueueManager([]Class{{Name: "voice", Priority: 1}})
+	if !q.UpdateClass("voice", Class{Name: "voice", Priority: 5}) {
+		t.Fatalf("expected update to succeed")
+	}
+	classes := q.Classes()
+	if !containsClass(classes, "voice") {
+		t.Fatalf("expected voice class to exist")
+	}
+	if q.UpdateClass("missing", Class{Name: "missing"}) {
+		t.Fatalf("expected update to fail for missing class")
+	}
+	if q.UpdateClass("default", Class{Name: "default", Priority: 1}) {
+		t.Fatalf("expected update to fail for default class")
+	}
+}
+
+func containsClass(classes []Class, name string) bool {
+	for _, cl := range classes {
+		if cl.Name == name {
+			return true
+		}
+	}
+	return false
+}
