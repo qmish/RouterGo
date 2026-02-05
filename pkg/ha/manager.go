@@ -54,6 +54,15 @@ func NewManager(nodeID string, priority int, interval time.Duration, hold time.D
 	}
 }
 
+func (m *Manager) SetHTTPClient(client *http.Client) {
+	if client == nil {
+		return
+	}
+	m.mu.Lock()
+	m.httpClient = client
+	m.mu.Unlock()
+}
+
 func (m *Manager) Start(ctx context.Context) error {
 	conn, err := net.ListenPacket("udp4", m.bindAddr)
 	if err != nil {
@@ -204,10 +213,16 @@ func (m *Manager) stateSyncLoop(ctx context.Context) {
 
 func (m *Manager) pushState(ctx context.Context, state State) {
 	body, _ := json.Marshal(state)
+	m.mu.Lock()
+	client := m.httpClient
+	m.mu.Unlock()
+	if client == nil {
+		client = &http.Client{Timeout: 3 * time.Second}
+	}
 	for _, peer := range m.peers {
 		url := strings.TrimRight(peer, "/") + m.statePath
 		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(body)))
 		req.Header.Set("Content-Type", "application/json")
-		_, _ = m.httpClient.Do(req)
+		_, _ = client.Do(req)
 	}
 }

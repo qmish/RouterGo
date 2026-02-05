@@ -132,6 +132,11 @@ ha:
     - http://127.0.0.1:8080
   state_sync_interval_seconds: 5
   state_endpoint_path: /api/ha/state
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+    client_ca_file: ""
 
 api:
   address: :8080

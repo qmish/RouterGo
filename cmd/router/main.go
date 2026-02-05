@@ -555,6 +555,19 @@ func buildHA(cfg *config.Config, log *logger.Logger, routes *routing.Table, fire
 			ha.ApplyState(firewallEngine, natTable, qosQueue, routes, state)
 		},
 	)
+	if cfg.HA.TLS.Enabled {
+		client, err := ha.NewHTTPClient(ha.TLSConfig{
+			Enabled:      cfg.HA.TLS.Enabled,
+			CertFile:     cfg.HA.TLS.CertFile,
+			KeyFile:      cfg.HA.TLS.KeyFile,
+			ClientCAFile: cfg.HA.TLS.ClientCAFile,
+		}, 3*time.Second)
+		if err != nil {
+			log.Warn("ha tls config invalid", map[string]any{"err": err.Error()})
+			return nil
+		}
+		manager.SetHTTPClient(client)
+	}
 	log.Info("ha enabled", map[string]any{
 		"node_id":   cfg.HA.NodeID,
 		"priority":  cfg.HA.Priority,
