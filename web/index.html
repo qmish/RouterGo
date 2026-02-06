@@ -304,8 +304,15 @@
       <div class="card">
         <h3>Мониторинг и логи</h3>
         <div class="meta">/settings/monitoring</div>
-        <div class="muted">Графики интерфейсов, логи firewall, NAT сессии.</div>
-        <div class="muted settings-section">В разработке.</div>
+        <div class="muted">Сводка: drops/errors, firewall, NAT, QoS.</div>
+        <div id="monitoringSummary" class="settings-section muted">Загрузка...</div>
+        <table id="monitoringFirewallTable" style="margin-top:8px;">
+          <thead>
+            <tr><th>Chain</th><th>Hits</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="muted settings-section">Логи и сессии в разработке.</div>
       </div>
 
       <div class="card">
@@ -877,6 +884,10 @@
         return apiGet('/api/interfaces');
       }
 
+      async function loadMonitoringSummary() {
+        return apiGet('/api/monitoring/summary');
+      }
+
       function renderEmptyRow(tbody, cols, text) {
         tbody.innerHTML = `<tr><td colspan="${cols}" class="muted">${text}</td></tr>`;
       }
@@ -1039,21 +1050,43 @@
         `).join('');
       }
 
+      function renderMonitoringSummary(summary) {
+        const summaryEl = document.getElementById('monitoringSummary');
+        if (!summary) {
+          summaryEl.textContent = 'Данные недоступны';
+          renderEmptyRow(document.querySelector('#monitoringFirewallTable tbody'), 2, 'Нет данных');
+          return;
+        }
+        summaryEl.textContent = `drops: ${summary.drops ?? 0}, errors: ${summary.errors ?? 0}, nat rules: ${summary.nat_rules ?? 0}, qos classes: ${summary.qos_classes ?? 0}`;
+        const tbody = document.querySelector('#monitoringFirewallTable tbody');
+        const hits = summary.firewall_chain_hits || {};
+        const rows = Object.keys(hits);
+        if (rows.length === 0) {
+          renderEmptyRow(tbody, 2, 'Нет данных');
+          return;
+        }
+        tbody.innerHTML = rows.map(chain => `
+          <tr><td>${chain}</td><td>${hits[chain]}</td></tr>
+        `).join('');
+      }
+
       async function refreshSettings() {
         try {
-          const [routes, firewall, nat, qos, defaults, interfaces] = await Promise.all([
+          const [routes, firewall, nat, qos, defaults, interfaces, monitoring] = await Promise.all([
             loadRoutes(),
             loadFirewall(),
             loadNAT(),
             loadQoS(),
             loadFirewallDefaults(),
-            loadInterfaces()
+            loadInterfaces(),
+            loadMonitoringSummary()
           ]);
           renderRoutes(routes);
           renderFirewall(firewall);
           renderNAT(nat);
           renderQoS(qos);
           renderInterfaces(interfaces);
+          renderMonitoringSummary(monitoring);
           if (defaults) {
             const chain = document.getElementById('fwDefaultChain').value;
             if (defaults[chain]) {

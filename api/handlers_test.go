@@ -1036,6 +1036,56 @@ func TestGetStats(t *testing.T) {
 	}
 }
 
+func TestGetMonitoringSummary(t *testing.T) {
+	fw := firewall.NewEngine([]firewall.Rule{
+		{Chain: "INPUT", Action: firewall.ActionAccept},
+	})
+	fw.Evaluate("INPUT", network.Packet{})
+	natTable := nat.NewTable([]nat.Rule{{Type: nat.TypeSNAT}})
+	q := qos.NewQueueManager([]qos.Class{{Name: "voice", Priority: 10}})
+	m := metrics.NewWithRegistry(prometheus.NewRegistry())
+	m.IncDrops()
+	m.IncErrors()
+
+	h := &Handlers{
+		Routes:   routing.NewTable(nil),
+		Firewall: fw,
+		NAT:      natTable,
+		QoS:      q,
+		Metrics:  m,
+	}
+	router := setupRouter(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/monitoring/summary", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp struct {
+		FirewallChainHits map[string]uint64 `json:"firewall_chain_hits"`
+		NATRules          int              `json:"nat_rules"`
+		QoSClasses        int              `json:"qos_classes"`
+		Drops             uint64           `json:"drops"`
+		Errors            uint64           `json:"errors"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.FirewallChainHits["INPUT"] != 1 {
+		t.Fatalf("expected INPUT hits 1, got %d", resp.FirewallChainHits["INPUT"])
+	}
+	if resp.NATRules != 1 {
+		t.Fatalf("expected nat rules 1, got %d", resp.NATRules)
+	}
+	if resp.QoSClasses < 1 {
+		t.Fatalf("expected qos classes >=1, got %d", resp.QoSClasses)
+	}
+	if resp.Drops != 1 || resp.Errors != 1 {
+		t.Fatalf("expected drops/errors to be 1, got %d/%d", resp.Drops, resp.Errors)
+	}
+}
+
 func TestResetIDS(t *testing.T) {
 	engine := ids.NewEngine(ids.Config{})
 	engine.AddRule(ids.Rule{
