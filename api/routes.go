@@ -41,6 +41,8 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	apiGroup.GET("/monitoring/summary", RequireRole(roleRead), handlers.GetMonitoringSummary)
 	apiGroup.GET("/system/time", RequireRole(roleRead), handlers.GetSystemTimeSettings)
 	apiGroup.POST("/system/time", RequireRole(roleOps), handlers.UpdateSystemTimeSettings)
+	apiGroup.GET("/system/tls", RequireRole(roleRead), handlers.GetSystemTLSSettings)
+	apiGroup.POST("/system/tls", RequireRole(roleOps), handlers.UpdateSystemTLSSettings)
 	apiGroup.GET("/dashboard/top/bandwidth", RequireRole(roleRead), handlers.GetDashboardTopBandwidth)
 	apiGroup.GET("/dashboard/sessions/tree", RequireRole(roleRead), handlers.GetDashboardSessionsTree)
 	apiGroup.GET("/dashboard/alerts", RequireRole(roleRead), handlers.GetDashboardAlerts)

@@ -1140,6 +1140,90 @@ func TestUpdateSystemTimeSettings(t *testing.T) {
 	}
 }
 
+func TestGetSystemTLSSettings(t *testing.T) {
+	cfg := &config.Config{
+		Security: config.SecurityConfig{
+			TLS: config.TLSConfig{
+				Enabled:  true,
+				CertFile: "cert.pem",
+				KeyFile:  "key.pem",
+			},
+		},
+	}
+	h := &Handlers{
+		Routes:    routing.NewTable(nil),
+		NAT:       nat.NewTable(nil),
+		QoS:       qos.NewQueueManager(nil),
+		Metrics:   metrics.NewWithRegistry(prometheus.NewRegistry()),
+		ConfigMgr: config.NewManager(cfg, nil),
+	}
+	router := setupRouter(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/system/tls", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("cert.pem")) {
+		t.Fatalf("expected cert in response")
+	}
+}
+
+func TestUpdateSystemTLSSettings(t *testing.T) {
+	cfg := &config.Config{}
+	h := &Handlers{
+		Routes:    routing.NewTable(nil),
+		NAT:       nat.NewTable(nil),
+		QoS:       qos.NewQueueManager(nil),
+		Metrics:   metrics.NewWithRegistry(prometheus.NewRegistry()),
+		ConfigMgr: config.NewManager(cfg, nil),
+	}
+	router := setupRouter(h)
+
+	payload := map[string]any{
+		"enabled":   true,
+		"cert_file": "server.crt",
+		"key_file":  "server.key",
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/system/tls", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	updated := h.ConfigMgr.Current()
+	if !updated.Security.TLS.Enabled || updated.Security.TLS.CertFile != "server.crt" {
+		t.Fatalf("expected tls settings updated")
+	}
+}
+
+func TestUpdateSystemTLSSettingsMissingFiles(t *testing.T) {
+	cfg := &config.Config{}
+	h := &Handlers{
+		Routes:    routing.NewTable(nil),
+		NAT:       nat.NewTable(nil),
+		QoS:       qos.NewQueueManager(nil),
+		Metrics:   metrics.NewWithRegistry(prometheus.NewRegistry()),
+		ConfigMgr: config.NewManager(cfg, nil),
+	}
+	router := setupRouter(h)
+
+	payload := map[string]any{
+		"enabled": true,
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/system/tls", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
 func TestResetIDS(t *testing.T) {
 	engine := ids.NewEngine(ids.Config{})
 	engine.AddRule(ids.Rule{
