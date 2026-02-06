@@ -1224,6 +1224,126 @@ func TestUpdateSystemTLSSettingsMissingFiles(t *testing.T) {
 	}
 }
 
+func TestVPNPeersCRUD(t *testing.T) {
+	h := &Handlers{
+		Routes:  routing.NewTable(nil),
+		NAT:     nat.NewTable(nil),
+		QoS:     qos.NewQueueManager(nil),
+		Metrics: metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	payload := map[string]any{
+		"id":          "peer-1",
+		"name":        "branch",
+		"local_cidr":  "10.0.0.0/24",
+		"remote_cidr": "10.1.0.0/24",
+		"endpoint":    "vpn.example.com:51820",
+		"enabled":     true,
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/vpn/peers", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/vpn/peers", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("peer-1")) {
+		t.Fatalf("expected peer in response")
+	}
+
+	update := map[string]any{
+		"id":       "peer-1",
+		"name":     "branch2",
+		"enabled":  false,
+	}
+	body, _ = json.Marshal(update)
+	req = httptest.NewRequest(http.MethodPut, "/api/vpn/peers", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	delBody, _ := json.Marshal(map[string]any{"id": "peer-1"})
+	req = httptest.NewRequest(http.MethodDelete, "/api/vpn/peers", bytes.NewReader(delBody))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestDHCPPoolsCRUD(t *testing.T) {
+	h := &Handlers{
+		Routes:  routing.NewTable(nil),
+		NAT:     nat.NewTable(nil),
+		QoS:     qos.NewQueueManager(nil),
+		Metrics: metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	payload := map[string]any{
+		"id":           "pool-1",
+		"name":         "LAN",
+		"subnet":       "192.168.1.0/24",
+		"range_start":  "192.168.1.100",
+		"range_end":    "192.168.1.200",
+		"lease_seconds": 3600,
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/dhcp/pools", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/dhcp/pools", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("pool-1")) {
+		t.Fatalf("expected pool in response")
+	}
+
+	update := map[string]any{
+		"id":            "pool-1",
+		"name":          "LAN-2",
+		"lease_seconds": 7200,
+	}
+	body, _ = json.Marshal(update)
+	req = httptest.NewRequest(http.MethodPut, "/api/dhcp/pools", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	delBody, _ := json.Marshal(map[string]any{"id": "pool-1"})
+	req = httptest.NewRequest(http.MethodDelete, "/api/dhcp/pools", bytes.NewReader(delBody))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
 func TestResetIDS(t *testing.T) {
 	engine := ids.NewEngine(ids.Config{})
 	engine.AddRule(ids.Rule{

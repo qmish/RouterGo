@@ -290,15 +290,50 @@
       <div class="card">
         <h3>VPN</h3>
         <div class="meta">/settings/vpn</div>
-        <div class="muted">Списки туннелей, ключи, статусы, маршруты.</div>
-        <div class="muted settings-section">В разработке.</div>
+        <table id="vpnTable">
+          <thead>
+            <tr><th>ID</th><th>Name</th><th>Local</th><th>Remote</th><th>Endpoint</th><th>Enabled</th><th>Actions</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="form-row settings-section">
+          <input id="vpnId" placeholder="id">
+          <input id="vpnName" placeholder="name">
+          <input id="vpnLocalCIDR" placeholder="local_cidr">
+          <input id="vpnRemoteCIDR" placeholder="remote_cidr">
+          <input id="vpnEndpoint" placeholder="endpoint host:port">
+          <input id="vpnPSK" placeholder="psk (optional)">
+          <label><input type="checkbox" id="vpnEnabled"> enabled</label>
+        </div>
+        <div class="form-actions">
+          <button id="addVPNBtn">Добавить peer</button>
+          <button id="updateVPNBtn" disabled>Обновить peer</button>
+          <button id="cancelVPNEditBtn" disabled>Отмена</button>
+        </div>
       </div>
 
       <div class="card">
         <h3>DHCP</h3>
         <div class="meta">/settings/dhcp</div>
-        <div class="muted">Пулы, резервации, статические записи.</div>
-        <div class="muted settings-section">В разработке.</div>
+        <table id="dhcpTable">
+          <thead>
+            <tr><th>ID</th><th>Name</th><th>Subnet</th><th>Range</th><th>Lease</th><th>Actions</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="form-row settings-section">
+          <input id="dhcpId" placeholder="id">
+          <input id="dhcpName" placeholder="name">
+          <input id="dhcpSubnet" placeholder="subnet (CIDR)">
+          <input id="dhcpRangeStart" placeholder="range_start">
+          <input id="dhcpRangeEnd" placeholder="range_end">
+          <input id="dhcpLease" placeholder="lease_seconds" type="number" min="0">
+        </div>
+        <div class="form-actions">
+          <button id="addDHCPBtn">Добавить пул</button>
+          <button id="updateDHCPBtn" disabled>Обновить пул</button>
+          <button id="cancelDHCPEditBtn" disabled>Отмена</button>
+        </div>
       </div>
 
       <div class="card">
@@ -921,6 +956,14 @@
         return apiGet('/api/system/tls');
       }
 
+      async function loadVPNPeers() {
+        return apiGet('/api/vpn/peers');
+      }
+
+      async function loadDHCPPools() {
+        return apiGet('/api/dhcp/pools');
+      }
+
       function renderEmptyRow(tbody, cols, text) {
         tbody.innerHTML = `<tr><td colspan="${cols}" class="muted">${text}</td></tr>`;
       }
@@ -1122,9 +1165,67 @@
         document.getElementById('systemTLSRequireClient').checked = !!data.require_client_cert;
       }
 
+      function renderVPNPeers(peers) {
+        const tbody = document.querySelector('#vpnTable tbody');
+        if (!peers || peers.length === 0) {
+          renderEmptyRow(tbody, 7, 'Peers не найдены');
+          return;
+        }
+        tbody.innerHTML = peers.map(p => `
+          <tr>
+            <td>${p.id || ''}</td>
+            <td>${p.name || ''}</td>
+            <td>${p.local_cidr || ''}</td>
+            <td>${p.remote_cidr || ''}</td>
+            <td>${p.endpoint || ''}</td>
+            <td>${p.enabled ? 'yes' : 'no'}</td>
+            <td>
+              <button class="vpn-edit"
+                data-id="${p.id || ''}"
+                data-name="${p.name || ''}"
+                data-local="${p.local_cidr || ''}"
+                data-remote="${p.remote_cidr || ''}"
+                data-endpoint="${p.endpoint || ''}"
+                data-psk="${p.psk || ''}"
+                data-enabled="${p.enabled ? '1' : '0'}"
+              >Редактировать</button>
+              <button class="vpn-delete" data-id="${p.id || ''}">Удалить</button>
+            </td>
+          </tr>
+        `).join('');
+      }
+
+      function renderDHCPPools(pools) {
+        const tbody = document.querySelector('#dhcpTable tbody');
+        if (!pools || pools.length === 0) {
+          renderEmptyRow(tbody, 6, 'Пулы не найдены');
+          return;
+        }
+        tbody.innerHTML = pools.map(p => `
+          <tr>
+            <td>${p.id || ''}</td>
+            <td>${p.name || ''}</td>
+            <td>${p.subnet || ''}</td>
+            <td>${p.range_start || ''} - ${p.range_end || ''}</td>
+            <td>${p.lease_seconds ?? ''}</td>
+            <td>
+              <button class="dhcp-edit"
+                data-id="${p.id || ''}"
+                data-name="${p.name || ''}"
+                data-subnet="${p.subnet || ''}"
+                data-start="${p.range_start || ''}"
+                data-end="${p.range_end || ''}"
+                data-lease="${p.lease_seconds ?? 0}"
+              >Редактировать</button>
+              <button class="dhcp-delete" data-id="${p.id || ''}">Удалить</button>
+            </td>
+          </tr>
+        `).join('');
+      }
+
       async function refreshSettings() {
         try {
-          const [routes, firewall, nat, qos, defaults, interfaces, monitoring, systemTime, systemTLS] = await Promise.all([
+          const [routes, firewall, nat, qos, defaults, interfaces, monitoring, systemTime, systemTLS, vpnPeers, dhcpPools] = await Promise.all([
             loadRoutes(),
             loadFirewall(),
             loadNAT(),
@@ -1133,7 +1234,9 @@
             loadInterfaces(),
             loadMonitoringSummary(),
             loadSystemTimeSettings(),
-            loadSystemTLSSettings()
+            loadSystemTLSSettings(),
+            loadVPNPeers(),
+            loadDHCPPools()
           ]);
           renderRoutes(routes);
           renderFirewall(firewall);
@@ -1143,6 +1246,8 @@
           renderMonitoringSummary(monitoring);
           renderSystemTimeSettings(systemTime);
           renderSystemTLSSettings(systemTLS);
+          renderVPNPeers(vpnPeers);
+          renderDHCPPools(dhcpPools);
           if (defaults) {
             const chain = document.getElementById('fwDefaultChain').value;
             if (defaults[chain]) {
@@ -1731,6 +1836,186 @@
             require_client_cert: requireClient
           });
           alert('Настройки TLS сохранены');
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      let editingVPN = null;
+      function setVPNEditState(state) {
+        editingVPN = state;
+        document.getElementById('updateVPNBtn').disabled = !editingVPN;
+        document.getElementById('cancelVPNEditBtn').disabled = !editingVPN;
+      }
+
+      function fillVPNForm(p) {
+        document.getElementById('vpnId').value = p.id || '';
+        document.getElementById('vpnName').value = p.name || '';
+        document.getElementById('vpnLocalCIDR').value = p.local_cidr || '';
+        document.getElementById('vpnRemoteCIDR').value = p.remote_cidr || '';
+        document.getElementById('vpnEndpoint').value = p.endpoint || '';
+        document.getElementById('vpnPSK').value = p.psk || '';
+        document.getElementById('vpnEnabled').checked = !!p.enabled;
+      }
+
+      document.getElementById('addVPNBtn').addEventListener('click', async () => {
+        const payload = {
+          id: document.getElementById('vpnId').value.trim(),
+          name: document.getElementById('vpnName').value.trim(),
+          local_cidr: document.getElementById('vpnLocalCIDR').value.trim(),
+          remote_cidr: document.getElementById('vpnRemoteCIDR').value.trim(),
+          endpoint: document.getElementById('vpnEndpoint').value.trim(),
+          psk: document.getElementById('vpnPSK').value.trim(),
+          enabled: document.getElementById('vpnEnabled').checked
+        };
+        try {
+          await apiPost('/api/vpn/peers', payload);
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('updateVPNBtn').addEventListener('click', async () => {
+        if (!editingVPN) {
+          return;
+        }
+        const payload = {
+          id: editingVPN.id,
+          name: document.getElementById('vpnName').value.trim(),
+          local_cidr: document.getElementById('vpnLocalCIDR').value.trim(),
+          remote_cidr: document.getElementById('vpnRemoteCIDR').value.trim(),
+          endpoint: document.getElementById('vpnEndpoint').value.trim(),
+          psk: document.getElementById('vpnPSK').value.trim(),
+          enabled: document.getElementById('vpnEnabled').checked
+        };
+        try {
+          await apiPut('/api/vpn/peers', payload);
+          setVPNEditState(null);
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('cancelVPNEditBtn').addEventListener('click', () => {
+        setVPNEditState(null);
+        fillVPNForm({ id: '', name: '', local_cidr: '', remote_cidr: '', endpoint: '', psk: '', enabled: false });
+      });
+
+      document.getElementById('vpnTable').addEventListener('click', async (event) => {
+        const target = event.target;
+        if (target.classList.contains('vpn-edit')) {
+          const peer = {
+            id: target.dataset.id || '',
+            name: target.dataset.name || '',
+            local_cidr: target.dataset.local || '',
+            remote_cidr: target.dataset.remote || '',
+            endpoint: target.dataset.endpoint || '',
+            psk: target.dataset.psk || '',
+            enabled: target.dataset.enabled === '1'
+          };
+          setVPNEditState(peer);
+          fillVPNForm(peer);
+          return;
+        }
+        if (!target.classList.contains('vpn-delete')) {
+          return;
+        }
+        if (!confirm('Удалить VPN peer?')) {
+          return;
+        }
+        try {
+          await apiDelete('/api/vpn/peers', { id: target.dataset.id || '' });
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      let editingDHCP = null;
+      function setDHCPEditState(state) {
+        editingDHCP = state;
+        document.getElementById('updateDHCPBtn').disabled = !editingDHCP;
+        document.getElementById('cancelDHCPEditBtn').disabled = !editingDHCP;
+      }
+
+      function fillDHCPForm(p) {
+        document.getElementById('dhcpId').value = p.id || '';
+        document.getElementById('dhcpName').value = p.name || '';
+        document.getElementById('dhcpSubnet').value = p.subnet || '';
+        document.getElementById('dhcpRangeStart').value = p.range_start || '';
+        document.getElementById('dhcpRangeEnd').value = p.range_end || '';
+        document.getElementById('dhcpLease').value = p.lease_seconds ?? '';
+      }
+
+      document.getElementById('addDHCPBtn').addEventListener('click', async () => {
+        const payload = {
+          id: document.getElementById('dhcpId').value.trim(),
+          name: document.getElementById('dhcpName').value.trim(),
+          subnet: document.getElementById('dhcpSubnet').value.trim(),
+          range_start: document.getElementById('dhcpRangeStart').value.trim(),
+          range_end: document.getElementById('dhcpRangeEnd').value.trim(),
+          lease_seconds: readNumber('dhcpLease')
+        };
+        try {
+          await apiPost('/api/dhcp/pools', payload);
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('updateDHCPBtn').addEventListener('click', async () => {
+        if (!editingDHCP) {
+          return;
+        }
+        const payload = {
+          id: editingDHCP.id,
+          name: document.getElementById('dhcpName').value.trim(),
+          subnet: document.getElementById('dhcpSubnet').value.trim(),
+          range_start: document.getElementById('dhcpRangeStart').value.trim(),
+          range_end: document.getElementById('dhcpRangeEnd').value.trim(),
+          lease_seconds: readNumber('dhcpLease')
+        };
+        try {
+          await apiPut('/api/dhcp/pools', payload);
+          setDHCPEditState(null);
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('cancelDHCPEditBtn').addEventListener('click', () => {
+        setDHCPEditState(null);
+        fillDHCPForm({ id: '', name: '', subnet: '', range_start: '', range_end: '', lease_seconds: '' });
+      });
+
+      document.getElementById('dhcpTable').addEventListener('click', async (event) => {
+        const target = event.target;
+        if (target.classList.contains('dhcp-edit')) {
+          const pool = {
+            id: target.dataset.id || '',
+            name: target.dataset.name || '',
+            subnet: target.dataset.subnet || '',
+            range_start: target.dataset.start || '',
+            range_end: target.dataset.end || '',
+            lease_seconds: parseInt(target.dataset.lease || '0', 10) || 0
+          };
+          setDHCPEditState(pool);
+          fillDHCPForm(pool);
+          return;
+        }
+        if (!target.classList.contains('dhcp-delete')) {
+          return;
+        }
+        if (!confirm('Удалить DHCP пул?')) {
+          return;
+        }
+        try {
+          await apiDelete('/api/dhcp/pools', { id: target.dataset.id || '' });
+          await refreshSettings();
         } catch (e) {
           alert(e.message);
         }
