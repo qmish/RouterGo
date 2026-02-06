@@ -28,6 +28,7 @@ type Config struct {
 	Performance      PerformanceConfig      `mapstructure:"performance"`
 	Logging          LoggingConfig          `mapstructure:"logging"`
 	Presets          PresetsConfig          `mapstructure:"presets"`
+	System           SystemConfig           `mapstructure:"system"`
 }
 
 type InterfaceConfig struct {
@@ -241,6 +242,11 @@ type PresetsConfig struct {
 	UpdateURL string `mapstructure:"update_url"`
 }
 
+type SystemConfig struct {
+	Timezone   string   `mapstructure:"timezone"`
+	NTPServers []string `mapstructure:"ntp_servers"`
+}
+
 func Load(path string) (*Config, error) {
 	v := viper.New()
 	v.SetConfigFile(path)
@@ -393,6 +399,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Presets.Dir == "" {
 		cfg.Presets.Dir = "presets"
+	}
+	if cfg.System.Timezone == "" {
+		cfg.System.Timezone = "UTC"
 	}
 }
 

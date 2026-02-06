@@ -167,3 +167,8 @@ logging:
 presets:
   dir: presets
   update_url: ""
+
+system:
+  timezone: "UTC"
+  ntp_servers:
+    - "pool.ntp.org"

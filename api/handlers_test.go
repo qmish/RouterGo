@@ -1086,6 +1086,60 @@ func TestGetMonitoringSummary(t *testing.T) {
 	}
 }
 
+func TestGetSystemTimeSettings(t *testing.T) {
+	cfg := &config.Config{System: config.SystemConfig{Timezone: "UTC", NTPServers: []string{"pool.ntp.org"}}}
+	h := &Handlers{
+		Routes:    routing.NewTable(nil),
+		NAT:       nat.NewTable(nil),
+		QoS:       qos.NewQueueManager(nil),
+		Metrics:   metrics.NewWithRegistry(prometheus.NewRegistry()),
+		ConfigMgr: config.NewManager(cfg, nil),
+	}
+	router := setupRouter(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/system/time", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("pool.ntp.org")) {
+		t.Fatalf("expected ntp server in response")
+	}
+}
+
+func TestUpdateSystemTimeSettings(t *testing.T) {
+	cfg := &config.Config{System: config.SystemConfig{Timezone: "UTC"}}
+	h := &Handlers{
+		Routes:    routing.NewTable(nil),
+		NAT:       nat.NewTable(nil),
+		QoS:       qos.NewQueueManager(nil),
+		Metrics:   metrics.NewWithRegistry(prometheus.NewRegistry()),
+		ConfigMgr: config.NewManager(cfg, nil),
+	}
+	router := setupRouter(h)
+
+	payload := map[string]any{
+		"timezone":    "Europe/Moscow",
+		"ntp_servers": []string{"time.google.com", "pool.ntp.org"},
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/system/time", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	updated := h.ConfigMgr.Current()
+	if updated.System.Timezone != "Europe/Moscow" {
+		t.Fatalf("expected timezone updated, got %s", updated.System.Timezone)
+	}
+	if len(updated.System.NTPServers) != 2 {
+		t.Fatalf("expected ntp servers updated")
+	}
+}
+
 func TestResetIDS(t *testing.T) {
 	engine := ids.NewEngine(ids.Config{})
 	engine.AddRule(ids.Rule{

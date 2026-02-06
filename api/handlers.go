@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"strconv"
@@ -871,6 +872,55 @@ func (h *Handlers) GetConfigSnapshots(c *gin.Context) {
 	c.JSON(http.StatusOK, h.ConfigMgr.Snapshots())
 }
 
+func (h *Handlers) GetSystemTimeSettings(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	cfg := h.ConfigMgr.Current()
+	c.JSON(http.StatusOK, gin.H{
+		"timezone":    cfg.System.Timezone,
+		"ntp_servers": cfg.System.NTPServers,
+	})
+}
+
+func (h *Handlers) UpdateSystemTimeSettings(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	var req struct {
+		Timezone   string   `json:"timezone"`
+		NTPServers []string `json:"ntp_servers"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	newCfg, err := cloneConfig(h.ConfigMgr.Current())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "config clone failed"})
+		return
+	}
+	if strings.TrimSpace(req.Timezone) != "" {
+		newCfg.System.Timezone = strings.TrimSpace(req.Timezone)
+	}
+	clean := make([]string, 0, len(req.NTPServers))
+	for _, server := range req.NTPServers {
+		server = strings.TrimSpace(server)
+		if server == "" {
+			continue
+		}
+		clean = append(clean, server)
+	}
+	newCfg.System.NTPServers = clean
+	if err := h.ConfigMgr.Apply(newCfg); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "apply failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
 func (h *Handlers) GetConfigExport(c *gin.Context) {
 	if h.ConfigMgr == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
@@ -925,6 +975,18 @@ func (h *Handlers) GetMonitoringSummary(c *gin.Context) {
 		"drops":               drops,
 		"errors":              errors,
 	})
+}
+
+func cloneConfig(cfg *config.Config) (*config.Config, error) {
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, err
+	}
+	var out config.Config
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 func (h *Handlers) GetDashboardTopBandwidth(c *gin.Context) {
