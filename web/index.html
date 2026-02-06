@@ -303,6 +303,9 @@
           <input id="vpnRemoteCIDR" placeholder="remote_cidr">
           <input id="vpnEndpoint" placeholder="endpoint host:port">
           <input id="vpnPSK" placeholder="psk (optional)">
+          <input id="vpnPublicKey" placeholder="public_key">
+          <input id="vpnPrivateKey" placeholder="private_key">
+          <input id="vpnAllowedIPs" placeholder="allowed_ips (через запятую)">
           <label><input type="checkbox" id="vpnEnabled"> enabled</label>
         </div>
         <div class="form-actions">
@@ -333,6 +336,26 @@
           <button id="addDHCPBtn">Добавить пул</button>
           <button id="updateDHCPBtn" disabled>Обновить пул</button>
           <button id="cancelDHCPEditBtn" disabled>Отмена</button>
+        </div>
+        <div class="settings-section"></div>
+        <table id="dhcpReservationsTable">
+          <thead>
+            <tr><th>ID</th><th>Name</th><th>Pool</th><th>MAC</th><th>IP</th><th>Hostname</th><th>Actions</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="form-row settings-section">
+          <input id="dhcpResId" placeholder="reservation id">
+          <input id="dhcpResName" placeholder="name">
+          <input id="dhcpResPool" placeholder="pool_id">
+          <input id="dhcpResMAC" placeholder="mac">
+          <input id="dhcpResIP" placeholder="ip">
+          <input id="dhcpResHostname" placeholder="hostname">
+        </div>
+        <div class="form-actions">
+          <button id="addDHCPResBtn">Добавить резервацию</button>
+          <button id="updateDHCPResBtn" disabled>Обновить резервацию</button>
+          <button id="cancelDHCPResEditBtn" disabled>Отмена</button>
         </div>
       </div>
 
@@ -964,6 +987,10 @@
         return apiGet('/api/dhcp/pools');
       }
 
+      async function loadDHCPReservations() {
+        return apiGet('/api/dhcp/reservations');
+      }
+
       function renderEmptyRow(tbody, cols, text) {
         tbody.innerHTML = `<tr><td colspan="${cols}" class="muted">${text}</td></tr>`;
       }
@@ -1187,6 +1214,9 @@
                 data-remote="${p.remote_cidr || ''}"
                 data-endpoint="${p.endpoint || ''}"
                 data-psk="${p.psk || ''}"
+                data-public-key="${p.public_key || ''}"
+                data-private-key="${p.private_key || ''}"
+                data-allowed-ips="${(p.allowed_ips || []).join(', ')}"
                 data-enabled="${p.enabled ? '1' : '0'}"
               >Редактировать</button>
               <button class="vpn-delete" data-id="${p.id || ''}">Удалить</button>
@@ -1223,9 +1253,38 @@
         `).join('');
       }
 
+      function renderDHCPReservations(list) {
+        const tbody = document.querySelector('#dhcpReservationsTable tbody');
+        if (!list || list.length === 0) {
+          renderEmptyRow(tbody, 7, 'Резервации не найдены');
+          return;
+        }
+        tbody.innerHTML = list.map(r => `
+          <tr>
+            <td>${r.id || ''}</td>
+            <td>${r.name || ''}</td>
+            <td>${r.pool_id || ''}</td>
+            <td>${r.mac || ''}</td>
+            <td>${r.ip || ''}</td>
+            <td>${r.hostname || ''}</td>
+            <td>
+              <button class="dhcp-res-edit"
+                data-id="${r.id || ''}"
+                data-name="${r.name || ''}"
+                data-pool="${r.pool_id || ''}"
+                data-mac="${r.mac || ''}"
+                data-ip="${r.ip || ''}"
+                data-hostname="${r.hostname || ''}"
+              >Редактировать</button>
+              <button class="dhcp-res-delete" data-id="${r.id || ''}">Удалить</button>
+            </td>
+          </tr>
+        `).join('');
+      }
+
       async function refreshSettings() {
         try {
-          const [routes, firewall, nat, qos, defaults, interfaces, monitoring, systemTime, systemTLS, vpnPeers, dhcpPools] = await Promise.all([
+          const [routes, firewall, nat, qos, defaults, interfaces, monitoring, systemTime, systemTLS, vpnPeers, dhcpPools, dhcpReservations] = await Promise.all([
             loadRoutes(),
             loadFirewall(),
             loadNAT(),
@@ -1236,7 +1295,8 @@
             loadSystemTimeSettings(),
             loadSystemTLSSettings(),
             loadVPNPeers(),
-            loadDHCPPools()
+            loadDHCPPools(),
+            loadDHCPReservations()
           ]);
           renderRoutes(routes);
           renderFirewall(firewall);
@@ -1248,6 +1308,7 @@
           renderSystemTLSSettings(systemTLS);
           renderVPNPeers(vpnPeers);
           renderDHCPPools(dhcpPools);
+          renderDHCPReservations(dhcpReservations);
           if (defaults) {
             const chain = document.getElementById('fwDefaultChain').value;
             if (defaults[chain]) {
@@ -1855,10 +1916,15 @@
         document.getElementById('vpnRemoteCIDR').value = p.remote_cidr || '';
         document.getElementById('vpnEndpoint').value = p.endpoint || '';
         document.getElementById('vpnPSK').value = p.psk || '';
+        document.getElementById('vpnPublicKey').value = p.public_key || '';
+        document.getElementById('vpnPrivateKey').value = p.private_key || '';
+        document.getElementById('vpnAllowedIPs').value = (p.allowed_ips || []).join(', ');
         document.getElementById('vpnEnabled').checked = !!p.enabled;
       }
 
       document.getElementById('addVPNBtn').addEventListener('click', async () => {
+        const allowedRaw = document.getElementById('vpnAllowedIPs').value.trim();
+        const allowed = allowedRaw ? allowedRaw.split(',').map(v => v.trim()).filter(Boolean) : [];
         const payload = {
           id: document.getElementById('vpnId').value.trim(),
           name: document.getElementById('vpnName').value.trim(),
@@ -1866,6 +1932,9 @@
           remote_cidr: document.getElementById('vpnRemoteCIDR').value.trim(),
           endpoint: document.getElementById('vpnEndpoint').value.trim(),
           psk: document.getElementById('vpnPSK').value.trim(),
+          public_key: document.getElementById('vpnPublicKey').value.trim(),
+          private_key: document.getElementById('vpnPrivateKey').value.trim(),
+          allowed_ips: allowed,
           enabled: document.getElementById('vpnEnabled').checked
         };
         try {
@@ -1880,6 +1949,8 @@
         if (!editingVPN) {
           return;
         }
+        const allowedRaw = document.getElementById('vpnAllowedIPs').value.trim();
+        const allowed = allowedRaw ? allowedRaw.split(',').map(v => v.trim()).filter(Boolean) : [];
         const payload = {
           id: editingVPN.id,
           name: document.getElementById('vpnName').value.trim(),
@@ -1887,6 +1958,9 @@
           remote_cidr: document.getElementById('vpnRemoteCIDR').value.trim(),
           endpoint: document.getElementById('vpnEndpoint').value.trim(),
           psk: document.getElementById('vpnPSK').value.trim(),
+          public_key: document.getElementById('vpnPublicKey').value.trim(),
+          private_key: document.getElementById('vpnPrivateKey').value.trim(),
+          allowed_ips: allowed,
           enabled: document.getElementById('vpnEnabled').checked
         };
         try {
@@ -1900,7 +1974,7 @@
 
       document.getElementById('cancelVPNEditBtn').addEventListener('click', () => {
         setVPNEditState(null);
-        fillVPNForm({ id: '', name: '', local_cidr: '', remote_cidr: '', endpoint: '', psk: '', enabled: false });
+        fillVPNForm({ id: '', name: '', local_cidr: '', remote_cidr: '', endpoint: '', psk: '', public_key: '', private_key: '', allowed_ips: [], enabled: false });
       });
 
       document.getElementById('vpnTable').addEventListener('click', async (event) => {
@@ -1913,6 +1987,9 @@
             remote_cidr: target.dataset.remote || '',
             endpoint: target.dataset.endpoint || '',
             psk: target.dataset.psk || '',
+            public_key: target.dataset.publicKey || '',
+            private_key: target.dataset.privateKey || '',
+            allowed_ips: target.dataset.allowedIps ? target.dataset.allowedIps.split(',').map(v => v.trim()).filter(Boolean) : [],
             enabled: target.dataset.enabled === '1'
           };
           setVPNEditState(peer);
@@ -1992,6 +2069,65 @@
         fillDHCPForm({ id: '', name: '', subnet: '', range_start: '', range_end: '', lease_seconds: '' });
       });
 
+      let editingDHCPRes = null;
+      function setDHCPResEditState(state) {
+        editingDHCPRes = state;
+        document.getElementById('updateDHCPResBtn').disabled = !editingDHCPRes;
+        document.getElementById('cancelDHCPResEditBtn').disabled = !editingDHCPRes;
+      }
+
+      function fillDHCPResForm(r) {
+        document.getElementById('dhcpResId').value = r.id || '';
+        document.getElementById('dhcpResName').value = r.name || '';
+        document.getElementById('dhcpResPool').value = r.pool_id || '';
+        document.getElementById('dhcpResMAC').value = r.mac || '';
+        document.getElementById('dhcpResIP').value = r.ip || '';
+        document.getElementById('dhcpResHostname').value = r.hostname || '';
+      }
+
+      document.getElementById('addDHCPResBtn').addEventListener('click', async () => {
+        const payload = {
+          id: document.getElementById('dhcpResId').value.trim(),
+          name: document.getElementById('dhcpResName').value.trim(),
+          pool_id: document.getElementById('dhcpResPool').value.trim(),
+          mac: document.getElementById('dhcpResMAC').value.trim(),
+          ip: document.getElementById('dhcpResIP').value.trim(),
+          hostname: document.getElementById('dhcpResHostname').value.trim()
+        };
+        try {
+          await apiPost('/api/dhcp/reservations', payload);
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('updateDHCPResBtn').addEventListener('click', async () => {
+        if (!editingDHCPRes) {
+          return;
+        }
+        const payload = {
+          id: editingDHCPRes.id,
+          name: document.getElementById('dhcpResName').value.trim(),
+          pool_id: document.getElementById('dhcpResPool').value.trim(),
+          mac: document.getElementById('dhcpResMAC').value.trim(),
+          ip: document.getElementById('dhcpResIP').value.trim(),
+          hostname: document.getElementById('dhcpResHostname').value.trim()
+        };
+        try {
+          await apiPut('/api/dhcp/reservations', payload);
+          setDHCPResEditState(null);
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('cancelDHCPResEditBtn').addEventListener('click', () => {
+        setDHCPResEditState(null);
+        fillDHCPResForm({ id: '', name: '', pool_id: '', mac: '', ip: '', hostname: '' });
+      });
+
       document.getElementById('dhcpTable').addEventListener('click', async (event) => {
         const target = event.target;
         if (target.classList.contains('dhcp-edit')) {
@@ -2015,6 +2151,35 @@
         }
         try {
           await apiDelete('/api/dhcp/pools', { id: target.dataset.id || '' });
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('dhcpReservationsTable').addEventListener('click', async (event) => {
+        const target = event.target;
+        if (target.classList.contains('dhcp-res-edit')) {
+          const res = {
+            id: target.dataset.id || '',
+            name: target.dataset.name || '',
+            pool_id: target.dataset.pool || '',
+            mac: target.dataset.mac || '',
+            ip: target.dataset.ip || '',
+            hostname: target.dataset.hostname || ''
+          };
+          setDHCPResEditState(res);
+          fillDHCPResForm(res);
+          return;
+        }
+        if (!target.classList.contains('dhcp-res-delete')) {
+          return;
+        }
+        if (!confirm('Удалить резервацию DHCP?')) {
+          return;
+        }
+        try {
+          await apiDelete('/api/dhcp/reservations', { id: target.dataset.id || '' });
           await refreshSettings();
         } catch (e) {
           alert(e.message);

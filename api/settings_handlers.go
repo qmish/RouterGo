@@ -15,7 +15,10 @@ type VPNPeer struct {
 	LocalCIDR  string `json:"local_cidr"`
 	RemoteCIDR string `json:"remote_cidr"`
 	Endpoint   string `json:"endpoint"`
+	PublicKey  string `json:"public_key"`
+	PrivateKey string `json:"private_key"`
 	PSK        string `json:"psk,omitempty"`
+	AllowedIPs []string `json:"allowed_ips,omitempty"`
 	Enabled    bool   `json:"enabled"`
 }
 
@@ -26,6 +29,15 @@ type DHCPPool struct {
 	RangeStart   string `json:"range_start"`
 	RangeEnd     string `json:"range_end"`
 	LeaseSeconds int    `json:"lease_seconds"`
+}
+
+type DHCPReservation struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	PoolID   string `json:"pool_id"`
+	MAC      string `json:"mac"`
+	IP       string `json:"ip"`
+	Hostname string `json:"hostname,omitempty"`
 }
 
 func (h *Handlers) GetVPNPeers(c *gin.Context) {
@@ -103,8 +115,17 @@ func (h *Handlers) UpdateVPNPeer(c *gin.Context) {
 			if strings.TrimSpace(req.Endpoint) != "" {
 				peer.Endpoint = strings.TrimSpace(req.Endpoint)
 			}
+			if strings.TrimSpace(req.PublicKey) != "" {
+				peer.PublicKey = strings.TrimSpace(req.PublicKey)
+			}
+			if strings.TrimSpace(req.PrivateKey) != "" {
+				peer.PrivateKey = strings.TrimSpace(req.PrivateKey)
+			}
 			if req.PSK != "" {
 				peer.PSK = req.PSK
+			}
+			if len(req.AllowedIPs) > 0 {
+				peer.AllowedIPs = req.AllowedIPs
 			}
 			peer.Enabled = req.Enabled
 			h.vpnPeers[i] = peer
@@ -265,6 +286,128 @@ func (h *Handlers) DeleteDHCPPool(c *gin.Context) {
 	c.JSON(http.StatusNotFound, gin.H{"error": "pool not found"})
 }
 
+func (h *Handlers) GetDHCPReservations(c *gin.Context) {
+	h.dhcpMu.Lock()
+	defer h.dhcpMu.Unlock()
+	if h.dhcpReservations == nil {
+		h.dhcpReservations = []DHCPReservation{}
+	}
+	out := make([]DHCPReservation, 0, len(h.dhcpReservations))
+	out = append(out, h.dhcpReservations...)
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *Handlers) AddDHCPReservation(c *gin.Context) {
+	var req DHCPReservation
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	req.ID = strings.TrimSpace(req.ID)
+	req.Name = strings.TrimSpace(req.Name)
+	if req.ID == "" || req.Name == "" || strings.TrimSpace(req.PoolID) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id, name and pool_id are required"})
+		return
+	}
+	if !validMAC(req.MAC) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid mac"})
+		return
+	}
+	if !validIP(req.IP) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ip"})
+		return
+	}
+	h.dhcpMu.Lock()
+	defer h.dhcpMu.Unlock()
+	for _, pool := range h.dhcpPools {
+		if pool.ID == req.PoolID {
+			goto ok
+		}
+	}
+	c.JSON(http.StatusBadRequest, gin.H{"error": "pool not found"})
+	return
+ok:
+	for _, res := range h.dhcpReservations {
+		if res.ID == req.ID {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "id already exists"})
+			return
+		}
+	}
+	h.dhcpReservations = append(h.dhcpReservations, req)
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *Handlers) UpdateDHCPReservation(c *gin.Context) {
+	var req DHCPReservation
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	req.ID = strings.TrimSpace(req.ID)
+	if req.ID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		return
+	}
+	if req.MAC != "" && !validMAC(req.MAC) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid mac"})
+		return
+	}
+	if req.IP != "" && !validIP(req.IP) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ip"})
+		return
+	}
+	h.dhcpMu.Lock()
+	defer h.dhcpMu.Unlock()
+	for i, res := range h.dhcpReservations {
+		if res.ID == req.ID {
+			if strings.TrimSpace(req.Name) != "" {
+				res.Name = strings.TrimSpace(req.Name)
+			}
+			if strings.TrimSpace(req.PoolID) != "" {
+				res.PoolID = strings.TrimSpace(req.PoolID)
+			}
+			if strings.TrimSpace(req.MAC) != "" {
+				res.MAC = strings.TrimSpace(req.MAC)
+			}
+			if strings.TrimSpace(req.IP) != "" {
+				res.IP = strings.TrimSpace(req.IP)
+			}
+			if strings.TrimSpace(req.Hostname) != "" {
+				res.Hostname = strings.TrimSpace(req.Hostname)
+			}
+			h.dhcpReservations[i] = res
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+			return
+		}
+	}
+	c.JSON(http.StatusNotFound, gin.H{"error": "reservation not found"})
+}
+
+func (h *Handlers) DeleteDHCPReservation(c *gin.Context) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	id := strings.TrimSpace(req.ID)
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		return
+	}
+	h.dhcpMu.Lock()
+	defer h.dhcpMu.Unlock()
+	for i, res := range h.dhcpReservations {
+		if res.ID == id {
+			h.dhcpReservations = append(h.dhcpReservations[:i], h.dhcpReservations[i+1:]...)
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+			return
+		}
+	}
+	c.JSON(http.StatusNotFound, gin.H{"error": "reservation not found"})
+}
+
 func validCIDR(value string) bool {
 	_, _, err := net.ParseCIDR(strings.TrimSpace(value))
 	return err == nil
@@ -294,4 +437,9 @@ func ipLess(a net.IP, b net.IP) bool {
 		return false
 	}
 	return bytes.Compare(a16, b16) < 0
+}
+
+func validMAC(value string) bool {
+	_, err := net.ParseMAC(strings.TrimSpace(value))
+	return err == nil
 }

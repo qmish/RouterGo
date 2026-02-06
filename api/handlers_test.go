@@ -1263,6 +1263,8 @@ func TestVPNPeersCRUD(t *testing.T) {
 	update := map[string]any{
 		"id":       "peer-1",
 		"name":     "branch2",
+		"public_key": "pubkey",
+		"allowed_ips": []string{"10.2.0.0/24"},
 		"enabled":  false,
 	}
 	body, _ = json.Marshal(update)
@@ -1336,6 +1338,82 @@ func TestDHCPPoolsCRUD(t *testing.T) {
 
 	delBody, _ := json.Marshal(map[string]any{"id": "pool-1"})
 	req = httptest.NewRequest(http.MethodDelete, "/api/dhcp/pools", bytes.NewReader(delBody))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestDHCPReservationsCRUD(t *testing.T) {
+	h := &Handlers{
+		Routes:  routing.NewTable(nil),
+		NAT:     nat.NewTable(nil),
+		QoS:     qos.NewQueueManager(nil),
+		Metrics: metrics.NewWithRegistry(prometheus.NewRegistry()),
+	}
+	router := setupRouter(h)
+
+	pool := map[string]any{
+		"id":           "pool-1",
+		"name":         "LAN",
+		"subnet":       "192.168.1.0/24",
+		"range_start":  "192.168.1.100",
+		"range_end":    "192.168.1.200",
+		"lease_seconds": 3600,
+	}
+	body, _ := json.Marshal(pool)
+	req := httptest.NewRequest(http.MethodPost, "/api/dhcp/pools", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	payload := map[string]any{
+		"id":       "res-1",
+		"name":     "printer",
+		"pool_id":  "pool-1",
+		"mac":      "aa:bb:cc:dd:ee:ff",
+		"ip":       "192.168.1.50",
+		"hostname": "printer",
+	}
+	body, _ = json.Marshal(payload)
+	req = httptest.NewRequest(http.MethodPost, "/api/dhcp/reservations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/dhcp/reservations", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("res-1")) {
+		t.Fatalf("expected reservation in response")
+	}
+
+	update := map[string]any{
+		"id":       "res-1",
+		"hostname": "printer-2",
+	}
+	body, _ = json.Marshal(update)
+	req = httptest.NewRequest(http.MethodPut, "/api/dhcp/reservations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	delBody, _ := json.Marshal(map[string]any{"id": "res-1"})
+	req = httptest.NewRequest(http.MethodDelete, "/api/dhcp/reservations", bytes.NewReader(delBody))
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)

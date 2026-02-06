@@ -53,6 +53,7 @@ type Handlers struct {
 	vpnPeers  []VPNPeer
 	dhcpMu    sync.Mutex
 	dhcpPools []DHCPPool
+	dhcpReservations []DHCPReservation
 }
 
 func (h *Handlers) GetRoutes(c *gin.Context) {
