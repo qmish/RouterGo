@@ -319,7 +319,15 @@
         <h3>Система и безопасность</h3>
         <div class="meta">/settings/system</div>
         <div class="muted">Обновления, бэкапы, пользователи, SSL/TLS, NTP.</div>
-        <div class="muted settings-section">В разработке.</div>
+        <div class="form-row settings-section">
+          <input id="systemTimezone" placeholder="Timezone (например, UTC)">
+          <input id="systemNTPServers" placeholder="NTP servers (через запятую)">
+        </div>
+        <div class="form-actions">
+          <button id="loadSystemTimeBtn">Загрузить</button>
+          <button id="saveSystemTimeBtn">Сохранить</button>
+        </div>
+        <div class="muted settings-section">Остальные функции в разработке.</div>
       </div>
 
       <div class="card">
@@ -888,6 +896,10 @@
         return apiGet('/api/monitoring/summary');
       }
 
+      async function loadSystemTimeSettings() {
+        return apiGet('/api/system/time');
+      }
+
       function renderEmptyRow(tbody, cols, text) {
         tbody.innerHTML = `<tr><td colspan="${cols}" class="muted">${text}</td></tr>`;
       }
@@ -1070,16 +1082,25 @@
         `).join('');
       }
 
+      function renderSystemTimeSettings(data) {
+        if (!data) {
+          return;
+        }
+        document.getElementById('systemTimezone').value = data.timezone || '';
+        document.getElementById('systemNTPServers').value = (data.ntp_servers || []).join(', ');
+      }
+
       async function refreshSettings() {
         try {
-          const [routes, firewall, nat, qos, defaults, interfaces, monitoring] = await Promise.all([
+          const [routes, firewall, nat, qos, defaults, interfaces, monitoring, systemTime] = await Promise.all([
             loadRoutes(),
             loadFirewall(),
             loadNAT(),
             loadQoS(),
             loadFirewallDefaults(),
             loadInterfaces(),
-            loadMonitoringSummary()
+            loadMonitoringSummary(),
+            loadSystemTimeSettings()
           ]);
           renderRoutes(routes);
           renderFirewall(firewall);
@@ -1087,6 +1108,7 @@
           renderQoS(qos);
           renderInterfaces(interfaces);
           renderMonitoringSummary(monitoring);
+          renderSystemTimeSettings(systemTime);
           if (defaults) {
             const chain = document.getElementById('fwDefaultChain').value;
             if (defaults[chain]) {
@@ -1625,6 +1647,27 @@
       document.getElementById('exportConfigYamlBtn').addEventListener('click', async () => {
         try {
           await downloadConfig('yaml');
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('loadSystemTimeBtn').addEventListener('click', async () => {
+        try {
+          const data = await loadSystemTimeSettings();
+          renderSystemTimeSettings(data);
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('saveSystemTimeBtn').addEventListener('click', async () => {
+        const timezone = document.getElementById('systemTimezone').value.trim();
+        const ntpRaw = document.getElementById('systemNTPServers').value.trim();
+        const servers = ntpRaw ? ntpRaw.split(',').map(v => v.trim()).filter(Boolean) : [];
+        try {
+          await apiPost('/api/system/time', { timezone: timezone, ntp_servers: servers });
+          alert('Настройки времени сохранены');
         } catch (e) {
           alert(e.message);
         }
