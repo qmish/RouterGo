@@ -921,6 +921,58 @@ func (h *Handlers) UpdateSystemTimeSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
+func (h *Handlers) GetSystemTLSSettings(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	tlsCfg := h.ConfigMgr.Current().Security.TLS
+	c.JSON(http.StatusOK, gin.H{
+		"enabled":             tlsCfg.Enabled,
+		"cert_file":           tlsCfg.CertFile,
+		"key_file":            tlsCfg.KeyFile,
+		"client_ca_file":      tlsCfg.ClientCAFile,
+		"require_client_cert": tlsCfg.RequireClientCert,
+	})
+}
+
+func (h *Handlers) UpdateSystemTLSSettings(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	var req struct {
+		Enabled           bool   `json:"enabled"`
+		CertFile          string `json:"cert_file"`
+		KeyFile           string `json:"key_file"`
+		ClientCAFile      string `json:"client_ca_file"`
+		RequireClientCert bool   `json:"require_client_cert"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	if req.Enabled && (strings.TrimSpace(req.CertFile) == "" || strings.TrimSpace(req.KeyFile) == "") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cert_file and key_file are required"})
+		return
+	}
+	newCfg, err := cloneConfig(h.ConfigMgr.Current())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "config clone failed"})
+		return
+	}
+	newCfg.Security.TLS.Enabled = req.Enabled
+	newCfg.Security.TLS.CertFile = strings.TrimSpace(req.CertFile)
+	newCfg.Security.TLS.KeyFile = strings.TrimSpace(req.KeyFile)
+	newCfg.Security.TLS.ClientCAFile = strings.TrimSpace(req.ClientCAFile)
+	newCfg.Security.TLS.RequireClientCert = req.RequireClientCert
+	if err := h.ConfigMgr.Apply(newCfg); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "apply failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
 func (h *Handlers) GetConfigExport(c *gin.Context) {
 	if h.ConfigMgr == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})

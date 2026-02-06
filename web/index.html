@@ -327,6 +327,23 @@
           <button id="loadSystemTimeBtn">Загрузить</button>
           <button id="saveSystemTimeBtn">Сохранить</button>
         </div>
+        <div class="form-row settings-section">
+          <label>
+            <input type="checkbox" id="systemTLSEnabled"> TLS enabled
+          </label>
+          <input id="systemTLSCert" placeholder="TLS cert file path">
+          <input id="systemTLSKey" placeholder="TLS key file path">
+        </div>
+        <div class="form-row">
+          <input id="systemTLSClientCA" placeholder="Client CA file path (optional)">
+          <label>
+            <input type="checkbox" id="systemTLSRequireClient"> Require client cert
+          </label>
+        </div>
+        <div class="form-actions">
+          <button id="loadSystemTLSBtn">Загрузить TLS</button>
+          <button id="saveSystemTLSBtn">Сохранить TLS</button>
+        </div>
         <div class="muted settings-section">Остальные функции в разработке.</div>
       </div>
 
@@ -900,6 +917,10 @@
         return apiGet('/api/system/time');
       }
 
+      async function loadSystemTLSSettings() {
+        return apiGet('/api/system/tls');
+      }
+
       function renderEmptyRow(tbody, cols, text) {
         tbody.innerHTML = `<tr><td colspan="${cols}" class="muted">${text}</td></tr>`;
       }
@@ -1090,9 +1111,20 @@
         document.getElementById('systemNTPServers').value = (data.ntp_servers || []).join(', ');
       }
 
+      function renderSystemTLSSettings(data) {
+        if (!data) {
+          return;
+        }
+        document.getElementById('systemTLSEnabled').checked = !!data.enabled;
+        document.getElementById('systemTLSCert').value = data.cert_file || '';
+        document.getElementById('systemTLSKey').value = data.key_file || '';
+        document.getElementById('systemTLSClientCA').value = data.client_ca_file || '';
+        document.getElementById('systemTLSRequireClient').checked = !!data.require_client_cert;
+      }
+
       async function refreshSettings() {
         try {
-          const [routes, firewall, nat, qos, defaults, interfaces, monitoring, systemTime] = await Promise.all([
+          const [routes, firewall, nat, qos, defaults, interfaces, monitoring, systemTime, systemTLS] = await Promise.all([
             loadRoutes(),
             loadFirewall(),
             loadNAT(),
@@ -1100,7 +1132,8 @@
             loadFirewallDefaults(),
             loadInterfaces(),
             loadMonitoringSummary(),
-            loadSystemTimeSettings()
+            loadSystemTimeSettings(),
+            loadSystemTLSSettings()
           ]);
           renderRoutes(routes);
           renderFirewall(firewall);
@@ -1109,6 +1142,7 @@
           renderInterfaces(interfaces);
           renderMonitoringSummary(monitoring);
           renderSystemTimeSettings(systemTime);
+          renderSystemTLSSettings(systemTLS);
           if (defaults) {
             const chain = document.getElementById('fwDefaultChain').value;
             if (defaults[chain]) {
@@ -1668,6 +1702,35 @@
         try {
           await apiPost('/api/system/time', { timezone: timezone, ntp_servers: servers });
           alert('Настройки времени сохранены');
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('loadSystemTLSBtn').addEventListener('click', async () => {
+        try {
+          const data = await loadSystemTLSSettings();
+          renderSystemTLSSettings(data);
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('saveSystemTLSBtn').addEventListener('click', async () => {
+        const enabled = document.getElementById('systemTLSEnabled').checked;
+        const certFile = document.getElementById('systemTLSCert').value.trim();
+        const keyFile = document.getElementById('systemTLSKey').value.trim();
+        const clientCA = document.getElementById('systemTLSClientCA').value.trim();
+        const requireClient = document.getElementById('systemTLSRequireClient').checked;
+        try {
+          await apiPost('/api/system/tls', {
+            enabled: enabled,
+            cert_file: certFile,
+            key_file: keyFile,
+            client_ca_file: clientCA,
+            require_client_cert: requireClient
+          });
+          alert('Настройки TLS сохранены');
         } catch (e) {
           alert(e.message);
         }
