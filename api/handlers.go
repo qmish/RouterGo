@@ -896,6 +896,37 @@ func (h *Handlers) GetConfigExport(c *gin.Context) {
 	}
 }
 
+func (h *Handlers) GetMonitoringSummary(c *gin.Context) {
+	var chainHits map[string]uint64
+	if h.Firewall != nil {
+		chainHits = h.Firewall.ChainHits()
+	} else {
+		chainHits = map[string]uint64{}
+	}
+	natRules := 0
+	if h.NAT != nil {
+		natRules = len(h.NAT.Rules())
+	}
+	qosClasses := 0
+	if h.QoS != nil {
+		qosClasses = len(h.QoS.Classes())
+	}
+	drops := uint64(0)
+	errors := uint64(0)
+	if h.Metrics != nil {
+		snap := h.Metrics.Snapshot()
+		drops = snap.Drops
+		errors = snap.Errors
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"firewall_chain_hits": chainHits,
+		"nat_rules":           natRules,
+		"qos_classes":         qosClasses,
+		"drops":               drops,
+		"errors":              errors,
+	})
+}
+
 func (h *Handlers) GetDashboardTopBandwidth(c *gin.Context) {
 	if h.Flow == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "flow tracking disabled"})
