@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"router-go/internal/config"
@@ -48,6 +49,10 @@ type Handlers struct {
 	Observability *observability.Store
 	Alerts        *observability.AlertStore
 	Presets   *presets.Store
+	vpnMu     sync.Mutex
+	vpnPeers  []VPNPeer
+	dhcpMu    sync.Mutex
+	dhcpPools []DHCPPool
 }
 
 func (h *Handlers) GetRoutes(c *gin.Context) {
