@@ -1,6 +1,7 @@
 package nat
 
 import (
+	"encoding/binary"
 	"net"
 	"strings"
 	"sync"
@@ -216,6 +217,7 @@ func applyTranslation(pkt *network.Packet, val ConnValue) {
 			pkt.Metadata.DstPort = val.TranslatedPort
 		}
 	}
+	rewritePacketData(pkt, val)
 }
 
 func applyRule(rule Rule, pkt network.Packet) (network.Packet, ConnValue, ConnKey, ConnValue) {
@@ -384,4 +386,192 @@ func ipEqual(a net.IP, b net.IP) bool {
 		return false
 	}
 	return a.Equal(b)
+}
+
+func rewritePacketData(pkt *network.Packet, val ConnValue) {
+	if len(pkt.Data) < 1 {
+		return
+	}
+	switch pkt.Data[0] >> 4 {
+	case 4:
+		rewriteIPv4Packet(pkt, val)
+	case 6:
+		rewriteIPv6Packet(pkt, val)
+	}
+}
+
+func rewriteIPv4Packet(pkt *network.Packet, val ConnValue) {
+	if len(pkt.Data) < 20 {
+		return
+	}
+	ihl := int(pkt.Data[0]&0x0F) * 4
+	if ihl < 20 || len(pkt.Data) < ihl {
+		return
+	}
+	proto := pkt.Data[9]
+	totalLen := int(binary.BigEndian.Uint16(pkt.Data[2:4]))
+	if totalLen <= 0 || totalLen > len(pkt.Data) {
+		totalLen = len(pkt.Data)
+	}
+
+	changedIP := false
+	if val.TranslatedIP != nil {
+		if ip4 := val.TranslatedIP.To4(); ip4 != nil {
+			switch val.Target {
+			case "src":
+				copy(pkt.Data[12:16], ip4)
+				changedIP = true
+			case "dst":
+				copy(pkt.Data[16:20], ip4)
+				changedIP = true
+			}
+		}
+	}
+	transportOffset := ihl
+	if val.TranslatedPort != 0 && totalLen >= transportOffset+4 {
+		switch val.Target {
+		case "src":
+			binary.BigEndian.PutUint16(pkt.Data[transportOffset:transportOffset+2], uint16(val.TranslatedPort))
+		case "dst":
+			binary.BigEndian.PutUint16(pkt.Data[transportOffset+2:transportOffset+4], uint16(val.TranslatedPort))
+		}
+	}
+
+	if changedIP {
+		binary.BigEndian.PutUint16(pkt.Data[10:12], 0)
+		hdrChecksum := network.Checksum(pkt.Data[:ihl])
+		binary.BigEndian.PutUint16(pkt.Data[10:12], hdrChecksum)
+	}
+
+	recomputeTransportChecksumIPv4(pkt.Data[:totalLen], ihl, proto)
+}
+
+func rewriteIPv6Packet(pkt *network.Packet, val ConnValue) {
+	if len(pkt.Data) < 40 {
+		return
+	}
+	nextHeader := pkt.Data[6]
+	payloadLen := int(binary.BigEndian.Uint16(pkt.Data[4:6]))
+	totalLen := 40 + payloadLen
+	if totalLen > len(pkt.Data) {
+		totalLen = len(pkt.Data)
+	}
+
+	if val.TranslatedIP != nil {
+		if ip16 := val.TranslatedIP.To16(); ip16 != nil {
+			switch val.Target {
+			case "src":
+				copy(pkt.Data[8:24], ip16)
+			case "dst":
+				copy(pkt.Data[24:40], ip16)
+			}
+		}
+	}
+	if val.TranslatedPort != 0 && totalLen >= 44 {
+		switch val.Target {
+		case "src":
+			binary.BigEndian.PutUint16(pkt.Data[40:42], uint16(val.TranslatedPort))
+		case "dst":
+			binary.BigEndian.PutUint16(pkt.Data[42:44], uint16(val.TranslatedPort))
+		}
+	}
+
+	recomputeTransportChecksumIPv6(pkt.Data[:totalLen], nextHeader)
+}
+
+func recomputeTransportChecksumIPv4(packet []byte, ihl int, proto uint8) {
+	switch proto {
+	case 6: // TCP
+		if len(packet) < ihl+20 {
+			return
+		}
+		segmentLen := len(packet) - ihl
+		pseudo := make([]byte, 0, 12+segmentLen)
+		pseudo = append(pseudo, packet[12:16]...)
+		pseudo = append(pseudo, packet[16:20]...)
+		pseudo = append(pseudo, 0, proto)
+		pseudoLen := make([]byte, 2)
+		binary.BigEndian.PutUint16(pseudoLen, uint16(segmentLen))
+		pseudo = append(pseudo, pseudoLen...)
+		segment := make([]byte, segmentLen)
+		copy(segment, packet[ihl:])
+		if len(segment) < 18 {
+			return
+		}
+		segment[16], segment[17] = 0, 0
+		pseudo = append(pseudo, segment...)
+		sum := network.Checksum(pseudo)
+		binary.BigEndian.PutUint16(packet[ihl+16:ihl+18], sum)
+	case 17: // UDP
+		if len(packet) < ihl+8 {
+			return
+		}
+		checksumOffset := ihl + 6
+		if checksumOffset+2 > len(packet) {
+			return
+		}
+		if binary.BigEndian.Uint16(packet[checksumOffset:checksumOffset+2]) == 0 {
+			return
+		}
+		segmentLen := len(packet) - ihl
+		pseudo := make([]byte, 0, 12+segmentLen)
+		pseudo = append(pseudo, packet[12:16]...)
+		pseudo = append(pseudo, packet[16:20]...)
+		pseudo = append(pseudo, 0, proto)
+		pseudoLen := make([]byte, 2)
+		binary.BigEndian.PutUint16(pseudoLen, uint16(segmentLen))
+		pseudo = append(pseudo, pseudoLen...)
+		segment := make([]byte, segmentLen)
+		copy(segment, packet[ihl:])
+		segment[6], segment[7] = 0, 0
+		pseudo = append(pseudo, segment...)
+		sum := network.Checksum(pseudo)
+		binary.BigEndian.PutUint16(packet[checksumOffset:checksumOffset+2], sum)
+	}
+}
+
+func recomputeTransportChecksumIPv6(packet []byte, nextHeader uint8) {
+	if len(packet) < 40 {
+		return
+	}
+	segmentLen := len(packet) - 40
+	switch nextHeader {
+	case 6: // TCP
+		if segmentLen < 20 {
+			return
+		}
+		pseudo := make([]byte, 0, 40+segmentLen)
+		pseudo = append(pseudo, packet[8:24]...)
+		pseudo = append(pseudo, packet[24:40]...)
+		lenBuf := make([]byte, 4)
+		binary.BigEndian.PutUint32(lenBuf, uint32(segmentLen))
+		pseudo = append(pseudo, lenBuf...)
+		pseudo = append(pseudo, 0, 0, 0, nextHeader)
+		segment := make([]byte, segmentLen)
+		copy(segment, packet[40:])
+		segment[16], segment[17] = 0, 0
+		pseudo = append(pseudo, segment...)
+		sum := network.Checksum(pseudo)
+		binary.BigEndian.PutUint16(packet[56:58], sum)
+	case 17: // UDP
+		if segmentLen < 8 {
+			return
+		}
+		pseudo := make([]byte, 0, 40+segmentLen)
+		pseudo = append(pseudo, packet[8:24]...)
+		pseudo = append(pseudo, packet[24:40]...)
+		lenBuf := make([]byte, 4)
+		binary.BigEndian.PutUint32(lenBuf, uint32(segmentLen))
+		pseudo = append(pseudo, lenBuf...)
+		pseudo = append(pseudo, 0, 0, 0, nextHeader)
+		segment := make([]byte, segmentLen)
+		copy(segment, packet[40:])
+		segment[6], segment[7] = 0, 0
+		pseudo = append(pseudo, segment...)
+		sum := network.Checksum(pseudo)
+		if sum == 0 {
+			sum = 0xffff
+		}
+		binary.BigEndian.PutUint16(packet[46:48], sum)
+	}
 }

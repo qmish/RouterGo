@@ -1,10 +1,13 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"reflect"
+	"sort"
 	"sync"
 	"time"
 )
@@ -22,6 +25,14 @@ type Manager struct {
 	snapshots []Snapshot
 	nextID    int
 	health    func(*Config) error
+}
+
+type ApplyPlan struct {
+	Timestamp         time.Time `json:"timestamp"`
+	PlannedSnapshotID int       `json:"planned_snapshot_id"`
+	ChangedSections   []string  `json:"changed_sections"`
+	Validation        string    `json:"validation"`
+	HealthCheck       string    `json:"health_check"`
 }
 
 func NewManager(cfg *Config, health func(*Config) error) *Manager {
@@ -48,7 +59,57 @@ func (m *Manager) Snapshots() []Snapshot {
 }
 
 func (m *Manager) Apply(newCfg *Config) error {
+	plan, err := m.Plan(newCfg)
+	if err != nil {
+		return err
+	}
+	return m.ApplyWithPlan(newCfg, plan)
+}
+
+func (m *Manager) Plan(newCfg *Config) (ApplyPlan, error) {
+	if newCfg == nil {
+		return ApplyPlan{}, errors.New("new config is required")
+	}
+
+	if err := Validate(newCfg); err != nil {
+		return ApplyPlan{}, fmt.Errorf("validation failed: %w", err)
+	}
+
 	m.mu.Lock()
+	prev := m.current
+	plannedSnapshotID := m.nextID
+	health := m.health
+	m.mu.Unlock()
+
+	healthStatus := "skipped"
+	if health != nil && newCfg.SelfHeal.Enabled {
+		if err := health(newCfg); err != nil {
+			return ApplyPlan{}, fmt.Errorf("health check failed: %w", err)
+		}
+		healthStatus = "ok"
+	}
+
+	return ApplyPlan{
+		Timestamp:         time.Now(),
+		PlannedSnapshotID: plannedSnapshotID,
+		ChangedSections:   changedSections(prev, newCfg),
+		Validation:        "ok",
+		HealthCheck:       healthStatus,
+	}, nil
+}
+
+func (m *Manager) ApplyWithPlan(newCfg *Config, plan ApplyPlan) error {
+	if newCfg == nil {
+		return errors.New("new config is required")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if plan.PlannedSnapshotID != 0 && m.nextID != plan.PlannedSnapshotID {
+		return errors.New("stale config plan")
+	}
+
 	prev := m.current
 	snapshot := Snapshot{
 		ID:        m.nextID,
@@ -59,16 +120,6 @@ func (m *Manager) Apply(newCfg *Config) error {
 	m.nextID++
 	m.snapshots = append(m.snapshots, snapshot)
 	m.current = newCfg
-	health := m.health
-	m.mu.Unlock()
-
-	if health == nil || !newCfg.SelfHeal.Enabled {
-		return nil
-	}
-	if err := health(newCfg); err != nil {
-		_ = m.rollbackWithReason(err.Error())
-		return fmt.Errorf("health check failed: %w", err)
-	}
 	return nil
 }
 
@@ -150,4 +201,72 @@ func httpCheck(url string, timeout time.Duration) error {
 		return fmt.Errorf("http status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func changedSections(prev *Config, next *Config) []string {
+	if next == nil {
+		return nil
+	}
+	if prev == nil {
+		return configSections(next)
+	}
+
+	prevMap, err := configToMap(prev)
+	if err != nil {
+		return nil
+	}
+	nextMap, err := configToMap(next)
+	if err != nil {
+		return nil
+	}
+
+	seen := map[string]struct{}{}
+	keys := make([]string, 0, len(prevMap)+len(nextMap))
+	for k := range prevMap {
+		seen[k] = struct{}{}
+		keys = append(keys, k)
+	}
+	for k := range nextMap {
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	changed := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if !reflect.DeepEqual(prevMap[key], nextMap[key]) {
+			changed = append(changed, key)
+		}
+	}
+	return changed
+}
+
+func configSections(cfg *Config) []string {
+	if cfg == nil {
+		return nil
+	}
+	m, err := configToMap(cfg)
+	if err != nil {
+		return nil
+	}
+	sections := make([]string, 0, len(m))
+	for k := range m {
+		sections = append(sections, k)
+	}
+	sort.Strings(sections)
+	return sections
+}
+
+func configToMap(cfg *Config) (map[string]any, error) {
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]any)
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

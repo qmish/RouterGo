@@ -847,14 +847,55 @@ func (h *Handlers) ApplyConfig(c *gin.Context) {
 		return
 	}
 
-	if err := h.ConfigMgr.Apply(newCfg); err != nil {
+	plan, err := h.ConfigMgr.Plan(newCfg)
+	if err != nil {
 		h.Metrics.IncConfigApplyFailed()
-		h.Metrics.IncConfigRollback()
-		c.JSON(http.StatusBadRequest, gin.H{"error": "health check failed"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.ConfigMgr.ApplyWithPlan(newCfg, plan); err != nil {
+		h.Metrics.IncConfigApplyFailed()
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
 	h.Metrics.IncConfigApply()
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{
+		"status":             "ok",
+		"planned_snapshot_id": plan.PlannedSnapshotID,
+		"changed_sections":    plan.ChangedSections,
+	})
+}
+
+func (h *Handlers) PlanConfig(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	var req struct {
+		ConfigYAML string `json:"config_yaml"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	if req.ConfigYAML == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "config_yaml is required"})
+		return
+	}
+
+	newCfg, err := config.LoadFromBytes([]byte(req.ConfigYAML))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid config"})
+		return
+	}
+
+	plan, err := h.ConfigMgr.Plan(newCfg)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, plan)
 }
 
 func (h *Handlers) RollbackConfig(c *gin.Context) {

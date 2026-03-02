@@ -71,3 +71,33 @@ func TestDequeueAndWriteBatchEmpty(t *testing.T) {
 		t.Fatalf("expected tx packets 0, got %d", m.Snapshot().TxPackets)
 	}
 }
+
+func TestDequeueAndWriteBatchWithResolverUsesEgressInterface(t *testing.T) {
+	queue := qos.NewQueueManager(nil)
+	m := metrics.NewWithRegistry(prometheus.NewRegistry())
+	writerA := &fakePacketIO{}
+	writerB := &fakePacketIO{}
+
+	queue.Enqueue(network.Packet{
+		EgressInterface: "wan-b",
+		Metadata: network.PacketMetadata{
+			Protocol: "UDP",
+		},
+	})
+
+	ok := dequeueAndWriteBatchWithResolver(queue, m, 1, func(pkt network.Packet) network.PacketIO {
+		if pkt.EgressInterface == "wan-b" {
+			return writerB
+		}
+		return writerA
+	})
+	if !ok {
+		t.Fatalf("expected dequeue success")
+	}
+	if writerA.writeCount != 0 {
+		t.Fatalf("expected writerA to have 0 writes, got %d", writerA.writeCount)
+	}
+	if writerB.writeCount != 1 {
+		t.Fatalf("expected writerB to have 1 write, got %d", writerB.writeCount)
+	}
+}

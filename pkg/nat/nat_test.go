@@ -1,6 +1,7 @@
 package nat
 
 import (
+	"encoding/binary"
 	"net"
 	"testing"
 
@@ -484,4 +485,171 @@ func TestUpdateRule(t *testing.T) {
 	if table.UpdateRule(Rule{Type: TypeDNAT}, Rule{Type: TypeDNAT}) {
 		t.Fatalf("expected update to fail for missing rule")
 	}
+}
+
+func TestApplySNATRewritesIPv4UDPData(t *testing.T) {
+	_, srcNet, _ := net.ParseCIDR("10.0.0.0/8")
+	table := NewTable([]Rule{
+		{
+			Type:   TypeSNAT,
+			SrcNet: srcNet,
+			ToIP:   net.ParseIP("203.0.113.10"),
+			ToPort: 40000,
+		},
+	})
+
+	raw := buildIPv4UDPPacket(t, net.ParseIP("10.1.2.3"), net.ParseIP("8.8.8.8"), 1234, 53)
+	out := table.Apply(network.Packet{
+		Data: raw,
+		Metadata: network.PacketMetadata{
+			Protocol:    "UDP",
+			ProtocolNum: 17,
+			SrcIP:       net.ParseIP("10.1.2.3"),
+			DstIP:       net.ParseIP("8.8.8.8"),
+			SrcPort:     1234,
+			DstPort:     53,
+		},
+	})
+
+	meta, err := network.ParseIPMetadata(out.Data)
+	if err != nil {
+		t.Fatalf("parse metadata after snat: %v", err)
+	}
+	if got := meta.SrcIP.String(); got != "203.0.113.10" {
+		t.Fatalf("expected src ip rewritten, got %s", got)
+	}
+	if meta.SrcPort != 40000 {
+		t.Fatalf("expected src port rewritten, got %d", meta.SrcPort)
+	}
+	if !verifyIPv4HeaderChecksum(out.Data) {
+		t.Fatalf("invalid ipv4 header checksum")
+	}
+	if !verifyIPv4UDPChecksum(out.Data) {
+		t.Fatalf("invalid udp checksum after snat")
+	}
+}
+
+func TestApplyDNATRewritesIPv4UDPData(t *testing.T) {
+	_, dstNet, _ := net.ParseCIDR("198.51.100.0/24")
+	table := NewTable([]Rule{
+		{
+			Type:   TypeDNAT,
+			DstNet: dstNet,
+			ToIP:   net.ParseIP("192.168.1.10"),
+			ToPort: 8080,
+		},
+	})
+
+	raw := buildIPv4UDPPacket(t, net.ParseIP("10.1.2.3"), net.ParseIP("198.51.100.25"), 60000, 80)
+	out := table.Apply(network.Packet{
+		Data: raw,
+		Metadata: network.PacketMetadata{
+			Protocol:    "UDP",
+			ProtocolNum: 17,
+			SrcIP:       net.ParseIP("10.1.2.3"),
+			DstIP:       net.ParseIP("198.51.100.25"),
+			SrcPort:     60000,
+			DstPort:     80,
+		},
+	})
+
+	meta, err := network.ParseIPMetadata(out.Data)
+	if err != nil {
+		t.Fatalf("parse metadata after dnat: %v", err)
+	}
+	if got := meta.DstIP.String(); got != "192.168.1.10" {
+		t.Fatalf("expected dst ip rewritten, got %s", got)
+	}
+	if meta.DstPort != 8080 {
+		t.Fatalf("expected dst port rewritten, got %d", meta.DstPort)
+	}
+	if !verifyIPv4HeaderChecksum(out.Data) {
+		t.Fatalf("invalid ipv4 header checksum")
+	}
+	if !verifyIPv4UDPChecksum(out.Data) {
+		t.Fatalf("invalid udp checksum after dnat")
+	}
+}
+
+func buildIPv4UDPPacket(t *testing.T, srcIP net.IP, dstIP net.IP, srcPort int, dstPort int) []byte {
+	t.Helper()
+	src4 := srcIP.To4()
+	dst4 := dstIP.To4()
+	if src4 == nil || dst4 == nil {
+		t.Fatalf("expected ipv4 addresses")
+	}
+	pkt := make([]byte, 28)
+	pkt[0] = 0x45
+	pkt[1] = 0x00
+	binary.BigEndian.PutUint16(pkt[2:4], uint16(len(pkt)))
+	pkt[6], pkt[7] = 0x40, 0x00
+	pkt[8] = 64
+	pkt[9] = 17
+	copy(pkt[12:16], src4)
+	copy(pkt[16:20], dst4)
+	binary.BigEndian.PutUint16(pkt[10:12], 0)
+	binary.BigEndian.PutUint16(pkt[10:12], network.Checksum(pkt[:20]))
+
+	binary.BigEndian.PutUint16(pkt[20:22], uint16(srcPort))
+	binary.BigEndian.PutUint16(pkt[22:24], uint16(dstPort))
+	binary.BigEndian.PutUint16(pkt[24:26], 8)
+	binary.BigEndian.PutUint16(pkt[26:28], 0)
+	udpSum := checksumIPv4UDP(pkt)
+	if udpSum == 0 {
+		udpSum = 0xffff
+	}
+	binary.BigEndian.PutUint16(pkt[26:28], udpSum)
+	return pkt
+}
+
+func verifyIPv4HeaderChecksum(pkt []byte) bool {
+	if len(pkt) < 20 {
+		return false
+	}
+	ihl := int(pkt[0]&0x0f) * 4
+	if ihl < 20 || len(pkt) < ihl {
+		return false
+	}
+	hdr := append([]byte(nil), pkt[:ihl]...)
+	hdr[10], hdr[11] = 0, 0
+	expected := network.Checksum(hdr)
+	actual := binary.BigEndian.Uint16(pkt[10:12])
+	return expected == actual
+}
+
+func verifyIPv4UDPChecksum(pkt []byte) bool {
+	if len(pkt) < 28 {
+		return false
+	}
+	ihl := int(pkt[0]&0x0f) * 4
+	if len(pkt) < ihl+8 {
+		return false
+	}
+	actual := binary.BigEndian.Uint16(pkt[ihl+6 : ihl+8])
+	if actual == 0 {
+		return true
+	}
+	expected := checksumIPv4UDP(pkt)
+	if expected == 0 {
+		expected = 0xffff
+	}
+	return expected == actual
+}
+
+func checksumIPv4UDP(pkt []byte) uint16 {
+	ihl := int(pkt[0]&0x0f) * 4
+	udp := append([]byte(nil), pkt[ihl:]...)
+	if len(udp) < 8 {
+		return 0
+	}
+	udp[6], udp[7] = 0, 0
+	pseudo := make([]byte, 0, 12+len(udp))
+	pseudo = append(pseudo, pkt[12:16]...)
+	pseudo = append(pseudo, pkt[16:20]...)
+	pseudo = append(pseudo, 0, 17)
+	lenBuf := make([]byte, 2)
+	binary.BigEndian.PutUint16(lenBuf, uint16(len(udp)))
+	pseudo = append(pseudo, lenBuf...)
+	pseudo = append(pseudo, udp...)
+	return network.Checksum(pseudo)
 }

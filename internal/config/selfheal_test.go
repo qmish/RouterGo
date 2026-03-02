@@ -32,10 +32,10 @@ func TestManagerApplyRollbackOnFailure(t *testing.T) {
 		t.Fatalf("expected error")
 	}
 	if mgr.Current() != base {
-		t.Fatalf("expected rollback to base config")
+		t.Fatalf("expected current config to remain base")
 	}
-	if len(mgr.Snapshots()) < 2 {
-		t.Fatalf("expected rollback snapshot")
+	if len(mgr.Snapshots()) != 0 {
+		t.Fatalf("expected no snapshots on failed plan")
 	}
 }
 
@@ -120,5 +120,43 @@ func TestDefaultHealthCheckPingGatewayFailure(t *testing.T) {
 	}
 	if err := DefaultHealthCheck(cfg); err == nil {
 		t.Fatalf("expected error on ping gateway failure")
+	}
+}
+
+func TestManagerPlanSuccess(t *testing.T) {
+	base := &Config{
+		API: APIConfig{Address: ":8080"},
+	}
+	mgr := NewManager(base, func(*Config) error { return nil })
+	next := &Config{
+		API: APIConfig{Address: ":8081"},
+	}
+
+	plan, err := mgr.Plan(next)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if plan.PlannedSnapshotID != 1 {
+		t.Fatalf("expected snapshot id 1, got %d", plan.PlannedSnapshotID)
+	}
+	if len(plan.ChangedSections) == 0 {
+		t.Fatalf("expected changed sections in plan")
+	}
+}
+
+func TestManagerApplyWithPlanStale(t *testing.T) {
+	base := &Config{API: APIConfig{Address: ":8080"}}
+	mgr := NewManager(base, nil)
+
+	plan1, err := mgr.Plan(&Config{API: APIConfig{Address: ":8081"}})
+	if err != nil {
+		t.Fatalf("plan1 failed: %v", err)
+	}
+	if err := mgr.ApplyWithPlan(&Config{API: APIConfig{Address: ":8081"}}, plan1); err != nil {
+		t.Fatalf("apply1 failed: %v", err)
+	}
+
+	if err := mgr.ApplyWithPlan(&Config{API: APIConfig{Address: ":8082"}}, plan1); err == nil {
+		t.Fatalf("expected stale plan error")
 	}
 }

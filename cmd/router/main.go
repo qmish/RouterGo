@@ -151,48 +151,86 @@ func startPacketLoop(
 	}
 
 	localIPs := buildLocalIPs(cfg)
-	io, err := platform.NewPacketIO(platform.Options{Interface: cfg.Interfaces[0]})
-	if err != nil {
-		log.Warn("packet io unavailable", map[string]any{"err": err.Error()})
+	writers := make(map[string]network.PacketIO, len(cfg.Interfaces))
+	var defaultWriter network.PacketIO
+	for _, iface := range cfg.Interfaces {
+		io, err := platform.NewPacketIO(platform.Options{Interface: iface})
+		if err != nil {
+			log.Warn("packet io unavailable for interface", map[string]any{
+				"interface": iface.Name,
+				"err":       err.Error(),
+			})
+			continue
+		}
+		writers[iface.Name] = io
+		if defaultWriter == nil {
+			defaultWriter = io
+		}
+	}
+	if len(writers) == 0 {
+		log.Warn("packet io unavailable", nil)
 		return
 	}
 
 	batchSize := cfg.Performance.EgressBatchSize
 	idleSleep := time.Duration(cfg.Performance.EgressIdleSleepMillis) * time.Millisecond
-	go runEgressLoop(ctx, io, qosQueue, log, metricsSrv, batchSize, idleSleep)
+	go runEgressLoop(ctx, defaultWriter, writers, qosQueue, metricsSrv, batchSize, idleSleep)
+	for _, iface := range cfg.Interfaces {
+		io, ok := writers[iface.Name]
+		if !ok {
+			continue
+		}
+		go runIngressLoop(ctx, io, iface.Name, localIPs, routes, firewallEngine, idsEngine, natTable, qosQueue, metricsSrv, flowEngine)
+	}
+}
 
-	go func() {
-		defer io.Close()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
+func runIngressLoop(
+	ctx context.Context,
+	io network.PacketIO,
+	interfaceName string,
+	localIPs []net.IP,
+	routes *routing.Table,
+	firewallEngine *firewall.Engine,
+	idsEngine *ids.Engine,
+	natTable *nat.Table,
+	qosQueue *qos.QueueManager,
+	metricsSrv *metrics.Metrics,
+	flowEngine *flow.Engine,
+) {
+	defer io.Close()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
 
 		pkt, err := io.ReadPacket(ctx)
 		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			metricsSrv.IncErrors()
 			continue
 		}
-			metricsSrv.IncRxPackets()
+		pkt.IngressInterface = interfaceName
+		metricsSrv.IncRxPackets()
 
-			meta, err := network.ParseIPMetadata(pkt.Data)
-			if err != nil {
-				metricsSrv.IncErrors()
-				metricsSrv.IncDropReason("parse")
-				if pkt.Release != nil {
-					pkt.Release()
-				}
-				continue
+		meta, err := network.ParseIPMetadata(pkt.Data)
+		if err != nil {
+			metricsSrv.IncErrors()
+			metricsSrv.IncDropReason("parse")
+			if pkt.Release != nil {
+				pkt.Release()
 			}
-			pkt.Metadata = meta
-
-			metricsSrv.IncPackets()
-			metricsSrv.AddBytes(len(pkt.Data))
-			handlePacket(pkt, localIPs, routes, firewallEngine, idsEngine, natTable, qosQueue, metricsSrv, flowEngine)
+			continue
 		}
-	}()
+		pkt.Metadata = meta
+
+		metricsSrv.IncPackets()
+		metricsSrv.AddBytes(len(pkt.Data))
+		handlePacket(pkt, localIPs, routes, firewallEngine, idsEngine, natTable, qosQueue, metricsSrv, flowEngine)
+	}
 }
 
 func processPacket(
@@ -206,7 +244,11 @@ func processPacket(
 	metricsSrv *metrics.Metrics,
 	flowEngine *flow.Engine,
 ) {
-	_, _ = routes.Lookup(pkt.Metadata.DstIP)
+	if routes != nil {
+		if route, ok := routes.Lookup(pkt.Metadata.DstIP); ok && route.Interface != "" {
+			pkt.EgressInterface = route.Interface
+		}
+	}
 	if flowEngine != nil {
 		flowEngine.AddPacket(pkt)
 	}
@@ -258,7 +300,15 @@ func handlePacket(
 	}
 }
 
-func runEgressLoop(ctx context.Context, io network.PacketIO, qosQueue *qos.QueueManager, log *logger.Logger, metricsSrv *metrics.Metrics, batchSize int, idleSleep time.Duration) {
+func runEgressLoop(
+	ctx context.Context,
+	defaultWriter network.PacketIO,
+	writers map[string]network.PacketIO,
+	qosQueue *qos.QueueManager,
+	metricsSrv *metrics.Metrics,
+	batchSize int,
+	idleSleep time.Duration,
+) {
 	if qosQueue == nil {
 		return
 	}
@@ -275,19 +325,45 @@ func runEgressLoop(ctx context.Context, io network.PacketIO, qosQueue *qos.Queue
 		default:
 		}
 
-		if ok := dequeueAndWriteBatch(qosQueue, io, metricsSrv, batchSize); !ok {
+		if ok := dequeueAndWriteBatchWithResolver(qosQueue, metricsSrv, batchSize, func(pkt network.Packet) network.PacketIO {
+			if pkt.EgressInterface != "" {
+				if io, ok := writers[pkt.EgressInterface]; ok {
+					return io
+				}
+			}
+			return defaultWriter
+		}); !ok {
 			time.Sleep(idleSleep)
 		}
 	}
 }
 
 func dequeueAndWriteBatch(qosQueue *qos.QueueManager, io network.PacketIO, metricsSrv *metrics.Metrics, batchSize int) bool {
+	return dequeueAndWriteBatchWithResolver(qosQueue, metricsSrv, batchSize, func(network.Packet) network.PacketIO {
+		return io
+	})
+}
+
+func dequeueAndWriteBatchWithResolver(
+	qosQueue *qos.QueueManager,
+	metricsSrv *metrics.Metrics,
+	batchSize int,
+	resolveWriter func(network.Packet) network.PacketIO,
+) bool {
 	batch := qosQueue.DequeueBatch(batchSize)
 	if len(batch) == 0 {
 		return false
 	}
 	for _, pkt := range batch {
-		_ = io.WritePacket(context.Background(), pkt)
+		writer := resolveWriter(pkt)
+		if writer == nil {
+			if metricsSrv != nil {
+				metricsSrv.IncErrors()
+				metricsSrv.IncDropReason("egress_no_writer")
+			}
+			continue
+		}
+		_ = writer.WritePacket(context.Background(), pkt)
 		if metricsSrv != nil {
 			metricsSrv.IncTxPackets()
 		}

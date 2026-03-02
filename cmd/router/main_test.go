@@ -26,6 +26,7 @@ import (
 	"router-go/pkg/nat"
 	"router-go/pkg/network"
 	"router-go/pkg/qos"
+	"router-go/pkg/routing"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -331,6 +332,116 @@ func TestDequeueAndWriteBatchMain(t *testing.T) {
 	}
 	if metricsSrv.Snapshot().TxPackets != 1 {
 		t.Fatalf("expected tx packets to be 1")
+	}
+}
+
+func TestProcessPacketSetsEgressInterfaceFromRoute(t *testing.T) {
+	_, dstNet, err := net.ParseCIDR("8.8.8.0/24")
+	if err != nil {
+		t.Fatalf("parse cidr: %v", err)
+	}
+	routes := routing.NewTable([]routing.Route{
+		{
+			Destination: *dstNet,
+			Interface:   "wan1",
+			Metric:      10,
+		},
+	})
+	fw := firewall.NewEngineWithDefaults([]firewall.Rule{
+		{
+			Chain:        "FORWARD",
+			Action:       firewall.ActionAccept,
+			Protocol:     "UDP",
+			OutInterface: "wan1",
+		},
+	}, map[string]firewall.Action{
+		"FORWARD": firewall.ActionDrop,
+	})
+	natTable := nat.NewTable(nil)
+	queue := qos.NewQueueManager(nil)
+	metricsSrv := metrics.NewWithRegistry(prometheus.NewRegistry())
+	pkt := network.Packet{
+		Metadata: network.PacketMetadata{
+			SrcIP:    net.ParseIP("10.0.0.2"),
+			DstIP:    net.ParseIP("8.8.8.8"),
+			Protocol: "UDP",
+			SrcPort:  12345,
+			DstPort:  53,
+		},
+	}
+
+	processPacket(pkt, nil, routes, fw, nil, natTable, queue, metricsSrv, nil)
+
+	out, ok := queue.Dequeue()
+	if !ok {
+		t.Fatalf("expected packet to be enqueued")
+	}
+	if out.EgressInterface != "wan1" {
+		t.Fatalf("expected egress interface wan1, got %q", out.EgressInterface)
+	}
+}
+
+func TestProcessPacketPipelineNATRoutingFirewall(t *testing.T) {
+	_, dstNet, err := net.ParseCIDR("8.8.8.0/24")
+	if err != nil {
+		t.Fatalf("parse route cidr: %v", err)
+	}
+	_, snatSrcNet, err := net.ParseCIDR("10.0.0.0/24")
+	if err != nil {
+		t.Fatalf("parse nat cidr: %v", err)
+	}
+	_, fwSrcNet, err := net.ParseCIDR("203.0.113.0/24")
+	if err != nil {
+		t.Fatalf("parse firewall cidr: %v", err)
+	}
+
+	routes := routing.NewTable([]routing.Route{
+		{
+			Destination: *dstNet,
+			Interface:   "wan1",
+		},
+	})
+	natTable := nat.NewTable([]nat.Rule{
+		{
+			Type:   nat.TypeSNAT,
+			SrcNet: snatSrcNet,
+			ToIP:   net.ParseIP("203.0.113.10"),
+		},
+	})
+	fw := firewall.NewEngineWithDefaults([]firewall.Rule{
+		{
+			Chain:        "FORWARD",
+			Action:       firewall.ActionAccept,
+			Protocol:     "UDP",
+			SrcNet:       fwSrcNet,
+			OutInterface: "wan1",
+		},
+	}, map[string]firewall.Action{
+		"FORWARD": firewall.ActionDrop,
+	})
+	queue := qos.NewQueueManager(nil)
+	metricsSrv := metrics.NewWithRegistry(prometheus.NewRegistry())
+	in := network.Packet{
+		Metadata: network.PacketMetadata{
+			SrcIP:    net.ParseIP("10.0.0.2"),
+			DstIP:    net.ParseIP("8.8.8.8"),
+			Protocol: "UDP",
+			SrcPort:  12000,
+			DstPort:  53,
+		},
+	}
+
+	processPacket(in, nil, routes, fw, nil, natTable, queue, metricsSrv, nil)
+
+	out, ok := queue.Dequeue()
+	if !ok {
+		t.Fatalf("expected packet to be enqueued")
+	}
+	if got := out.Metadata.SrcIP.String(); got != "203.0.113.10" {
+		t.Fatalf("expected SNAT src ip 203.0.113.10, got %s", got)
+	}
+	if out.EgressInterface != "wan1" {
+		t.Fatalf("expected egress interface wan1, got %q", out.EgressInterface)
 	}
 }
 

@@ -48,6 +48,21 @@ func TestApplyConfigSuccess(t *testing.T) {
 	}
 }
 
+func TestPlanConfigSuccess(t *testing.T) {
+	router := setupConfigRouter(func(*config.Config) error { return nil })
+	payload := map[string]any{
+		"config_yaml": "api:\n  address: :8081\n",
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/config/plan", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
 func TestApplyConfigHealthFail(t *testing.T) {
 	router := setupConfigRouter(func(*config.Config) error { return errors.New("fail") })
 	payload := map[string]any{
@@ -55,6 +70,21 @@ func TestApplyConfigHealthFail(t *testing.T) {
 	}
 	body, _ := json.Marshal(payload)
 	req := httptest.NewRequest(http.MethodPost, "/api/config/apply", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestPlanConfigHealthFail(t *testing.T) {
+	router := setupConfigRouter(func(*config.Config) error { return errors.New("fail") })
+	payload := map[string]any{
+		"config_yaml": "selfheal:\n  enabled: true\napi:\n  address: :8080\n",
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/config/plan", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
