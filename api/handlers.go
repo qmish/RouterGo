@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -15,11 +17,11 @@ import (
 	"router-go/internal/metrics"
 	"router-go/internal/observability"
 	"router-go/internal/presets"
+	"router-go/pkg/enrich"
 	"router-go/pkg/firewall"
 	"router-go/pkg/flow"
-	"router-go/pkg/enrich"
-	"router-go/pkg/ids"
 	"router-go/pkg/ha"
+	"router-go/pkg/ids"
 	"router-go/pkg/nat"
 	"router-go/pkg/p2p"
 	"router-go/pkg/proxy"
@@ -31,28 +33,28 @@ import (
 )
 
 type Handlers struct {
-	Routes    *routing.Table
-	Firewall  *firewall.Engine
-	IDS       *ids.Engine
-	NAT       *nat.Table
-	QoS       *qos.QueueManager
-	Flow      *flow.Engine
-	P2P       *p2p.Engine
-	Proxy     *proxy.Proxy
-	Enrich    *enrich.Service
-	EnrichTimeout time.Duration
-	HA        *ha.Manager
-	Security  *config.SecurityConfig
-	Log       *logger.Logger
-	ConfigMgr *config.Manager
-	Metrics   *metrics.Metrics
-	Observability *observability.Store
-	Alerts        *observability.AlertStore
-	Presets   *presets.Store
-	vpnMu     sync.Mutex
-	vpnPeers  []VPNPeer
-	dhcpMu    sync.Mutex
-	dhcpPools []DHCPPool
+	Routes           *routing.Table
+	Firewall         *firewall.Engine
+	IDS              *ids.Engine
+	NAT              *nat.Table
+	QoS              *qos.QueueManager
+	Flow             *flow.Engine
+	P2P              *p2p.Engine
+	Proxy            *proxy.Proxy
+	Enrich           *enrich.Service
+	EnrichTimeout    time.Duration
+	HA               *ha.Manager
+	Security         *config.SecurityConfig
+	Log              *logger.Logger
+	ConfigMgr        *config.Manager
+	Metrics          *metrics.Metrics
+	Observability    *observability.Store
+	Alerts           *observability.AlertStore
+	Presets          *presets.Store
+	vpnMu            sync.Mutex
+	vpnPeers         []VPNPeer
+	dhcpMu           sync.Mutex
+	dhcpPools        []DHCPPool
 	dhcpReservations []DHCPReservation
 }
 
@@ -830,6 +832,8 @@ func (h *Handlers) ApplyConfig(c *gin.Context) {
 	}
 	var req struct {
 		ConfigYAML string `json:"config_yaml"`
+		Actor      string `json:"actor"`
+		Reason     string `json:"reason"`
 	}
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
@@ -854,14 +858,19 @@ func (h *Handlers) ApplyConfig(c *gin.Context) {
 		return
 	}
 
-	if err := h.ConfigMgr.ApplyWithPlan(newCfg, plan); err != nil {
+	actor := resolveActor(c, req.Actor)
+	if err := h.ConfigMgr.ApplyWithMeta(newCfg, plan, config.ChangeMeta{
+		Actor:  actor,
+		Reason: strings.TrimSpace(req.Reason),
+	}); err != nil {
 		h.Metrics.IncConfigApplyFailed()
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
 	h.Metrics.IncConfigApply()
 	c.JSON(http.StatusOK, gin.H{
-		"status":             "ok",
+		"status":              "ok",
+		"actor":               actor,
 		"planned_snapshot_id": plan.PlannedSnapshotID,
 		"changed_sections":    plan.ChangedSections,
 	})
@@ -903,7 +912,18 @@ func (h *Handlers) RollbackConfig(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
 		return
 	}
-	if err := h.ConfigMgr.RollbackLast(); err != nil {
+	var req struct {
+		Actor  string `json:"actor"`
+		Reason string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	if err := h.ConfigMgr.RollbackWithMeta(config.ChangeMeta{
+		Actor:  resolveActor(c, req.Actor),
+		Reason: strings.TrimSpace(req.Reason),
+	}); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no snapshots"})
 		return
 	}
@@ -928,6 +948,24 @@ func (h *Handlers) GetConfigHistory(c *gin.Context) {
 		"revision": h.ConfigMgr.Revision(),
 		"history":  h.ConfigMgr.History(),
 	})
+}
+
+func (h *Handlers) GetConfigHistoryExport(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	payload := gin.H{
+		"revision": h.ConfigMgr.Revision(),
+		"history":  h.ConfigMgr.History(),
+	}
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "export failed"})
+		return
+	}
+	c.Header("Content-Disposition", "attachment; filename=config-history.json")
+	c.Data(http.StatusOK, "application/json; charset=utf-8", data)
 }
 
 func (h *Handlers) GetConfigDiff(c *gin.Context) {
@@ -1126,6 +1164,23 @@ func cloneConfig(cfg *config.Config) (*config.Config, error) {
 		return nil, err
 	}
 	return &out, nil
+}
+
+func resolveActor(c *gin.Context, requested string) string {
+	requested = strings.TrimSpace(requested)
+	if requested != "" {
+		return requested
+	}
+	headerActor := strings.TrimSpace(c.GetHeader("X-Actor"))
+	if headerActor != "" {
+		return headerActor
+	}
+	if role, ok := c.Get("role"); ok {
+		if roleStr, cast := role.(string); cast {
+			return "role:" + roleStr
+		}
+	}
+	return "system"
 }
 
 func (h *Handlers) GetDashboardTopBandwidth(c *gin.Context) {

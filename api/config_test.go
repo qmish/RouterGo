@@ -22,11 +22,11 @@ func setupConfigRouter(health func(*config.Config) error) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	manager := config.NewManager(&config.Config{}, health)
 	h := &Handlers{
-		Routes:   routing.NewTable(nil),
-		NAT:      nat.NewTable(nil),
-		QoS:      qos.NewQueueManager(nil),
+		Routes:    routing.NewTable(nil),
+		NAT:       nat.NewTable(nil),
+		QoS:       qos.NewQueueManager(nil),
 		ConfigMgr: manager,
-		Metrics:  metrics.NewWithRegistry(prometheus.NewRegistry()),
+		Metrics:   metrics.NewWithRegistry(prometheus.NewRegistry()),
 	}
 	router := gin.New()
 	RegisterRoutes(router, h)
@@ -163,6 +163,8 @@ func TestGetConfigHistory(t *testing.T) {
 	router := setupConfigRouter(func(*config.Config) error { return nil })
 	payload := map[string]any{
 		"config_yaml": "api:\n  address: :8080\n",
+		"actor":       "qa-user",
+		"reason":      "api bind update",
 	}
 	body, _ := json.Marshal(payload)
 	req := httptest.NewRequest(http.MethodPost, "/api/config/apply", bytes.NewReader(body))
@@ -185,6 +187,17 @@ func TestGetConfigHistory(t *testing.T) {
 	}
 	if _, ok := out["history"]; !ok {
 		t.Fatalf("expected history field")
+	}
+	rawHistory, ok := out["history"].([]any)
+	if !ok || len(rawHistory) == 0 {
+		t.Fatalf("expected non-empty history array")
+	}
+	entry, ok := rawHistory[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected history entry object")
+	}
+	if entry["actor"] != "qa-user" {
+		t.Fatalf("expected actor qa-user, got %v", entry["actor"])
 	}
 }
 
@@ -224,5 +237,33 @@ func TestGetConfigDiffInvalidParams(t *testing.T) {
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestGetConfigHistoryExport(t *testing.T) {
+	router := setupConfigRouter(func(*config.Config) error { return nil })
+	payload := map[string]any{
+		"config_yaml": "api:\n  address: :8083\n",
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/config/apply", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for apply, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/config/history/export", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); ct == "" {
+		t.Fatalf("expected content type header")
+	}
+	if cd := w.Header().Get("Content-Disposition"); cd == "" {
+		t.Fatalf("expected content disposition header")
 	}
 }

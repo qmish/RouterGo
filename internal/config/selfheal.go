@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -49,25 +50,33 @@ type SectionDiff struct {
 }
 
 type ConfigDiff struct {
-	FromRevision   int          `json:"from_revision"`
-	ToRevision     int          `json:"to_revision"`
-	ChangedSections []string    `json:"changed_sections"`
-	SectionDiffs   []SectionDiff `json:"section_diffs"`
+	FromRevision    int           `json:"from_revision"`
+	ToRevision      int           `json:"to_revision"`
+	ChangedSections []string      `json:"changed_sections"`
+	SectionDiffs    []SectionDiff `json:"section_diffs"`
 }
 
 type HistoryEntry struct {
-	ID        int       `json:"id"`
-	Timestamp time.Time `json:"timestamp"`
-	Reason    string    `json:"reason"`
-	Revision  int       `json:"revision"`
+	ID              int       `json:"id"`
+	Timestamp       time.Time `json:"timestamp"`
+	Reason          string    `json:"reason"`
+	Revision        int       `json:"revision"`
+	Actor           string    `json:"actor"`
+	ChangedSections []string  `json:"changed_sections,omitempty"`
 }
 
 type persistedState struct {
-	Current   *Config       `json:"current"`
-	Snapshots []Snapshot    `json:"snapshots"`
+	Current   *Config        `json:"current"`
+	Snapshots []Snapshot     `json:"snapshots"`
 	History   []HistoryEntry `json:"history"`
-	NextID    int           `json:"next_id"`
-	Revision  int           `json:"revision"`
+	NextID    int            `json:"next_id"`
+	Revision  int            `json:"revision"`
+}
+
+type ChangeMeta struct {
+	Actor           string
+	Reason          string
+	ChangedSections []string
 }
 
 func NewManager(cfg *Config, health func(*Config) error) *Manager {
@@ -167,10 +176,10 @@ func (m *Manager) DiffRevisions(fromRevision int, toRevision int) (ConfigDiff, e
 	}
 
 	return ConfigDiff{
-		FromRevision:   fromRevision,
-		ToRevision:     toRevision,
+		FromRevision:    fromRevision,
+		ToRevision:      toRevision,
 		ChangedSections: changedSections,
-		SectionDiffs:   sectionDiffs,
+		SectionDiffs:    sectionDiffs,
 	}, nil
 }
 
@@ -218,6 +227,10 @@ func (m *Manager) Plan(newCfg *Config) (ApplyPlan, error) {
 }
 
 func (m *Manager) ApplyWithPlan(newCfg *Config, plan ApplyPlan) error {
+	return m.ApplyWithMeta(newCfg, plan, ChangeMeta{})
+}
+
+func (m *Manager) ApplyWithMeta(newCfg *Config, plan ApplyPlan, meta ChangeMeta) error {
 	if newCfg == nil {
 		return errors.New("new config is required")
 	}
@@ -243,11 +256,21 @@ func (m *Manager) ApplyWithPlan(newCfg *Config, plan ApplyPlan) error {
 	m.snapshots = append(m.snapshots, snapshot)
 	m.current = newCfg
 	m.revision++
+	changed := meta.ChangedSections
+	if len(changed) == 0 {
+		changed = append([]string(nil), plan.ChangedSections...)
+	}
+	reason := strings.TrimSpace(meta.Reason)
+	if reason == "" {
+		reason = "apply"
+	}
 	m.history = append(m.history, HistoryEntry{
-		ID:        snapshot.ID,
-		Timestamp: time.Now(),
-		Reason:    "apply",
-		Revision:  m.revision,
+		ID:              snapshot.ID,
+		Timestamp:       time.Now(),
+		Reason:          reason,
+		Revision:        m.revision,
+		Actor:           normalizeActor(meta.Actor),
+		ChangedSections: changed,
 	})
 	if err := m.persistLocked(); err != nil {
 		return fmt.Errorf("persist failed: %w", err)
@@ -256,22 +279,37 @@ func (m *Manager) ApplyWithPlan(newCfg *Config, plan ApplyPlan) error {
 }
 
 func (m *Manager) RollbackLast() error {
+	return m.RollbackWithMeta(ChangeMeta{})
+}
+
+func (m *Manager) RollbackWithMeta(meta ChangeMeta) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if len(m.snapshots) == 0 {
 		return errors.New("no snapshots")
 	}
+	prev := m.current
 	last := m.snapshots[len(m.snapshots)-1]
 	m.current = last.Config
 	m.snapshots = m.snapshots[:len(m.snapshots)-1]
 	if m.revision > 0 {
 		m.revision--
 	}
+	changed := meta.ChangedSections
+	if len(changed) == 0 {
+		changed = changedSections(prev, last.Config)
+	}
+	reason := strings.TrimSpace(meta.Reason)
+	if reason == "" {
+		reason = "rollback"
+	}
 	m.history = append(m.history, HistoryEntry{
-		ID:        m.nextID,
-		Timestamp: time.Now(),
-		Reason:    "rollback",
-		Revision:  m.revision,
+		ID:              m.nextID,
+		Timestamp:       time.Now(),
+		Reason:          reason,
+		Revision:        m.revision,
+		Actor:           normalizeActor(meta.Actor),
+		ChangedSections: changed,
 	})
 	m.nextID++
 	if err := m.persistLocked(); err != nil {
@@ -463,4 +501,12 @@ func (m *Manager) configByRevisionLocked(revision int) (*Config, bool) {
 		return m.snapshots[revision].Config, true
 	}
 	return nil, false
+}
+
+func normalizeActor(actor string) string {
+	actor = strings.TrimSpace(actor)
+	if actor == "" {
+		return "system"
+	}
+	return actor
 }
