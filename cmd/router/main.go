@@ -75,7 +75,10 @@ func main() {
 	idsEngine := buildIDS(cfg)
 	natTable := buildNAT(cfg, log)
 	qosQueue := buildQoSQueue(cfg)
-	cfgManager := config.NewManager(cfg, config.DefaultHealthCheck)
+	cfgManager := config.NewManagerWithStore(cfg, config.DefaultHealthCheck, cfg.System.StateStorePath)
+	if err := cfgManager.LoadPersisted(); err != nil {
+		log.Warn("config state load failed", map[string]any{"err": err.Error(), "path": cfg.System.StateStorePath})
+	}
 	flowEngine := flow.NewEngine()
 	p2pEngine := buildP2P(cfg, routeTable, metricsSrv, log, ctx)
 	proxyEngine := buildProxy(cfg, metricsSrv, log, ctx)

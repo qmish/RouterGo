@@ -919,6 +919,17 @@ func (h *Handlers) GetConfigSnapshots(c *gin.Context) {
 	c.JSON(http.StatusOK, h.ConfigMgr.Snapshots())
 }
 
+func (h *Handlers) GetConfigHistory(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"revision": h.ConfigMgr.Revision(),
+		"history":  h.ConfigMgr.History(),
+	})
+}
+
 func (h *Handlers) GetSystemTimeSettings(c *gin.Context) {
 	if h.ConfigMgr == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})

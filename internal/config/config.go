@@ -243,8 +243,9 @@ type PresetsConfig struct {
 }
 
 type SystemConfig struct {
-	Timezone   string   `mapstructure:"timezone"`
-	NTPServers []string `mapstructure:"ntp_servers"`
+	Timezone       string   `mapstructure:"timezone"`
+	NTPServers     []string `mapstructure:"ntp_servers"`
+	StateStorePath string   `mapstructure:"state_store_path"`
 }
 
 func Load(path string) (*Config, error) {
@@ -402,6 +403,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.System.Timezone == "" {
 		cfg.System.Timezone = "UTC"
+	}
+	if cfg.System.StateStorePath == "" {
+		cfg.System.StateStorePath = "data/config-state.json"
 	}
 }
 

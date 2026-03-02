@@ -53,3 +53,4 @@
 - [x] 2026-03-02: Добавлен `TestSmokePacketPipelineThroughput` (`cmd/router/smoke_test.go`) и зафиксирован baseline в `docs/performance-smoke.md`.
 - [x] 2026-03-02: Реализован API-процесс `validate -> plan -> apply` (`POST /api/config/plan`, обновлен `/api/config/apply`) с тестами.
 - [x] 2026-03-02: Усилен atomic apply (plan+revision), rollback сделан стековым и консистентным; добавлены тесты невалидного apply/plan и rollback без snapshot.
+- [x] 2026-03-02: Добавлена персистентность состояния config manager (current/snapshots/history/revision) и API `GET /api/config/history` (Stage 3, блок 1).

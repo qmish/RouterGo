@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 )
 
@@ -209,5 +210,35 @@ func TestManagerRollbackTwoSteps(t *testing.T) {
 	}
 	if got := mgr.Current().API.Address; got != ":8080" {
 		t.Fatalf("expected :8080 after second rollback, got %s", got)
+	}
+}
+
+func TestManagerPersistAndLoad(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "config-state.json")
+	base := &Config{API: APIConfig{Address: ":8080"}}
+	mgr := NewManagerWithStore(base, nil, storePath)
+
+	if err := mgr.Apply(&Config{API: APIConfig{Address: ":8081"}}); err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+	if err := mgr.Apply(&Config{API: APIConfig{Address: ":8082"}}); err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+	if err := mgr.RollbackLast(); err != nil {
+		t.Fatalf("rollback failed: %v", err)
+	}
+
+	restored := NewManagerWithStore(&Config{}, nil, storePath)
+	if err := restored.LoadPersisted(); err != nil {
+		t.Fatalf("load persisted failed: %v", err)
+	}
+	if got := restored.Current().API.Address; got != ":8081" {
+		t.Fatalf("expected restored current :8081, got %s", got)
+	}
+	if restored.Revision() != 1 {
+		t.Fatalf("expected restored revision 1, got %d", restored.Revision())
+	}
+	if len(restored.History()) == 0 {
+		t.Fatalf("expected non-empty history")
 	}
 }

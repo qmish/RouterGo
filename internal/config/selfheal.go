@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"sync"
@@ -23,8 +25,10 @@ type Manager struct {
 	mu        sync.Mutex
 	current   *Config
 	snapshots []Snapshot
+	history   []HistoryEntry
 	nextID    int
 	revision  int
+	storePath string
 	health    func(*Config) error
 }
 
@@ -38,12 +42,33 @@ type ApplyPlan struct {
 	HealthCheck       string    `json:"health_check"`
 }
 
+type HistoryEntry struct {
+	ID        int       `json:"id"`
+	Timestamp time.Time `json:"timestamp"`
+	Reason    string    `json:"reason"`
+	Revision  int       `json:"revision"`
+}
+
+type persistedState struct {
+	Current   *Config       `json:"current"`
+	Snapshots []Snapshot    `json:"snapshots"`
+	History   []HistoryEntry `json:"history"`
+	NextID    int           `json:"next_id"`
+	Revision  int           `json:"revision"`
+}
+
 func NewManager(cfg *Config, health func(*Config) error) *Manager {
+	return NewManagerWithStore(cfg, health, "")
+}
+
+func NewManagerWithStore(cfg *Config, health func(*Config) error, storePath string) *Manager {
 	return &Manager{
 		current:   cfg,
 		snapshots: nil,
+		history:   nil,
 		nextID:    1,
 		revision:  0,
+		storePath: storePath,
 		health:    health,
 	}
 }
@@ -59,6 +84,14 @@ func (m *Manager) Snapshots() []Snapshot {
 	defer m.mu.Unlock()
 	out := make([]Snapshot, 0, len(m.snapshots))
 	out = append(out, m.snapshots...)
+	return out
+}
+
+func (m *Manager) History() []HistoryEntry {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]HistoryEntry, 0, len(m.history))
+	out = append(out, m.history...)
 	return out
 }
 
@@ -137,6 +170,15 @@ func (m *Manager) ApplyWithPlan(newCfg *Config, plan ApplyPlan) error {
 	m.snapshots = append(m.snapshots, snapshot)
 	m.current = newCfg
 	m.revision++
+	m.history = append(m.history, HistoryEntry{
+		ID:        snapshot.ID,
+		Timestamp: time.Now(),
+		Reason:    "apply",
+		Revision:  m.revision,
+	})
+	if err := m.persistLocked(); err != nil {
+		return fmt.Errorf("persist failed: %w", err)
+	}
 	return nil
 }
 
@@ -151,6 +193,16 @@ func (m *Manager) RollbackLast() error {
 	m.snapshots = m.snapshots[:len(m.snapshots)-1]
 	if m.revision > 0 {
 		m.revision--
+	}
+	m.history = append(m.history, HistoryEntry{
+		ID:        m.nextID,
+		Timestamp: time.Now(),
+		Reason:    "rollback",
+		Revision:  m.revision,
+	})
+	m.nextID++
+	if err := m.persistLocked(); err != nil {
+		return fmt.Errorf("persist failed: %w", err)
 	}
 	return nil
 }
@@ -265,4 +317,64 @@ func configToMap(cfg *Config) (map[string]any, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+func (m *Manager) LoadPersisted() error {
+	if m.storePath == "" {
+		return nil
+	}
+	data, err := os.ReadFile(m.storePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	var state persistedState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if state.Current != nil {
+		m.current = state.Current
+	}
+	m.snapshots = append([]Snapshot(nil), state.Snapshots...)
+	m.history = append([]HistoryEntry(nil), state.History...)
+	if state.NextID > 0 {
+		m.nextID = state.NextID
+	}
+	if state.Revision >= 0 {
+		m.revision = state.Revision
+	}
+	return nil
+}
+
+func (m *Manager) persistLocked() error {
+	if m.storePath == "" {
+		return nil
+	}
+	state := persistedState{
+		Current:   m.current,
+		Snapshots: m.snapshots,
+		History:   m.history,
+		NextID:    m.nextID,
+		Revision:  m.revision,
+	}
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(m.storePath)
+	if dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	tmp := m.storePath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, m.storePath)
 }

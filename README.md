@@ -46,8 +46,10 @@ go build -o p2pkeygen cmd/p2pkeygen/main.go
 - `GET /api/qos` — список классов QoS
 - `POST /api/qos` — добавление класса QoS
 - `POST /api/config/apply` — применить конфигурацию (self-heal)
+- `POST /api/config/plan` — проверить/спланировать применение конфигурации (dry-run)
 - `POST /api/config/rollback` — откат к последнему снапшоту
 - `GET /api/config/snapshots` — список снапшотов
+- `GET /api/config/history` — история apply/rollback с ревизиями
 - `GET /api/dashboard/top/bandwidth` — топ потребителей трафика
 - `GET /api/dashboard/sessions/tree` — дерево сессий
 - `GET /api/dashboard/alerts` — алерты в реальном времени
@@ -230,6 +232,16 @@ Performance:
 performance:
   egress_batch_size: 16
   egress_idle_sleep_millis: 2
+```
+
+System:
+
+```yaml
+system:
+  timezone: UTC
+  ntp_servers:
+    - pool.ntp.org
+  state_store_path: data/config-state.json
 ```
 
 ## Примечания

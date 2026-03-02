@@ -38,6 +38,7 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	apiGroup.POST("/config/plan", RequireRole(roleOps), handlers.PlanConfig)
 	apiGroup.POST("/config/rollback", RequireRole(roleOps), handlers.RollbackConfig)
 	apiGroup.GET("/config/snapshots", RequireRole(roleRead), handlers.GetConfigSnapshots)
+	apiGroup.GET("/config/history", RequireRole(roleRead), handlers.GetConfigHistory)
 	apiGroup.GET("/config/export", RequireRole(roleRead), handlers.GetConfigExport)
 	apiGroup.GET("/monitoring/summary", RequireRole(roleRead), handlers.GetMonitoringSummary)
 	apiGroup.GET("/system/time", RequireRole(roleRead), handlers.GetSystemTimeSettings)

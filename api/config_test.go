@@ -158,3 +158,32 @@ func TestRollbackConfigWithoutSnapshots(t *testing.T) {
 		t.Fatalf("expected 400, got %d", w.Code)
 	}
 }
+
+func TestGetConfigHistory(t *testing.T) {
+	router := setupConfigRouter(func(*config.Config) error { return nil })
+	payload := map[string]any{
+		"config_yaml": "api:\n  address: :8080\n",
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/config/apply", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for apply, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/config/history", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	if _, ok := out["history"]; !ok {
+		t.Fatalf("expected history field")
+	}
+}
