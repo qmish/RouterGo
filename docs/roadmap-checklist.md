@@ -24,7 +24,7 @@
 - [x] Персистентное хранение правил/политик/снапшотов.
 - [x] Версионирование конфигов и diff между версиями.
 - [x] Audit trail изменений (кто/когда/что).
-- [ ] Backup/restore и проверка восстановления.
+- [x] Backup/restore и проверка восстановления.
 
 ## Stage 4 - Security Baseline
 
@@ -56,3 +56,4 @@
 - [x] 2026-03-02: Добавлена персистентность состояния config manager (current/snapshots/history/revision) и API `GET /api/config/history` (Stage 3, блок 1).
 - [x] 2026-03-02: Добавлен API diff ревизий конфигурации `GET /api/config/diff` и методы versioning/diff в config manager (Stage 3, блок 2).
 - [x] 2026-03-02: Добавлен audit trail конфигурации (`actor/reason/changed_sections`) и экспорт истории `GET /api/config/history/export` (Stage 3, блок 3).
+- [x] 2026-03-02: Добавлены backup/restore config manager с checksum-верификацией (`GET /api/config/backup`, `POST /api/config/restore`) и тестами восстановления (Stage 3, блок 4).

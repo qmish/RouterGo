@@ -51,6 +51,8 @@ go build -o p2pkeygen cmd/p2pkeygen/main.go
 - `GET /api/config/snapshots` — список снапшотов
 - `GET /api/config/history` — история apply/rollback с ревизиями
 - `GET /api/config/history/export` — экспорт истории изменений конфигурации (JSON)
+- `GET /api/config/backup` — backup состояния config manager (JSON + checksum)
+- `POST /api/config/restore` — восстановление состояния из backup с верификацией checksum
 - `GET /api/config/diff?from=0&to=1` — diff между ревизиями конфигурации
 - `GET /api/dashboard/top/bandwidth` — топ потребителей трафика
 - `GET /api/dashboard/sessions/tree` — дерево сессий

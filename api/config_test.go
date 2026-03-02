@@ -267,3 +267,111 @@ func TestGetConfigHistoryExport(t *testing.T) {
 		t.Fatalf("expected content disposition header")
 	}
 }
+
+func TestGetConfigBackup(t *testing.T) {
+	router := setupConfigRouter(func(*config.Config) error { return nil })
+	payload := map[string]any{
+		"config_yaml": "api:\n  address: :8084\n",
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/config/apply", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for apply, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/config/backup", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if len(w.Body.Bytes()) == 0 {
+		t.Fatalf("expected non-empty backup body")
+	}
+}
+
+func TestRestoreConfigSuccess(t *testing.T) {
+	router := setupConfigRouter(func(*config.Config) error { return nil })
+
+	applyPayload := map[string]any{
+		"config_yaml": "api:\n  address: :8085\n",
+	}
+	applyBody, _ := json.Marshal(applyPayload)
+	req := httptest.NewRequest(http.MethodPost, "/api/config/apply", bytes.NewReader(applyBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for apply, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/config/backup", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for backup, got %d", w.Code)
+	}
+	backup := w.Body.String()
+
+	applyPayload = map[string]any{
+		"config_yaml": "api:\n  address: :9090\n",
+	}
+	applyBody, _ = json.Marshal(applyPayload)
+	req = httptest.NewRequest(http.MethodPost, "/api/config/apply", bytes.NewReader(applyBody))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for apply-2, got %d", w.Code)
+	}
+
+	restorePayload := map[string]any{
+		"backup_json": backup,
+		"actor":       "qa-restore",
+		"reason":      "restore backup",
+	}
+	restoreBody, _ := json.Marshal(restorePayload)
+	req = httptest.NewRequest(http.MethodPost, "/api/config/restore", bytes.NewReader(restoreBody))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for restore, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/config/export?format=json", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for export, got %d", w.Code)
+	}
+	var cfgOut map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &cfgOut); err != nil {
+		t.Fatalf("invalid config json: %v", err)
+	}
+	apiSection, ok := cfgOut["API"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected api section in config export")
+	}
+	if apiSection["Address"] != ":8085" {
+		t.Fatalf("expected restored address :8085, got %v", apiSection["Address"])
+	}
+}
+
+func TestRestoreConfigInvalidBackup(t *testing.T) {
+	router := setupConfigRouter(func(*config.Config) error { return nil })
+	restorePayload := map[string]any{
+		"backup_json": "{bad-json",
+	}
+	restoreBody, _ := json.Marshal(restorePayload)
+	req := httptest.NewRequest(http.MethodPost, "/api/config/restore", bytes.NewReader(restoreBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid backup, got %d", w.Code)
+	}
+}

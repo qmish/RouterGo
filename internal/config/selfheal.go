@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -79,6 +81,13 @@ type ChangeMeta struct {
 	ChangedSections []string
 }
 
+type BackupBundle struct {
+	Version   int            `json:"version"`
+	CreatedAt time.Time      `json:"created_at"`
+	State     persistedState `json:"state"`
+	Checksum  string         `json:"checksum"`
+}
+
 func NewManager(cfg *Config, health func(*Config) error) *Manager {
 	return NewManagerWithStore(cfg, health, "")
 }
@@ -121,6 +130,93 @@ func (m *Manager) Revision() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.revision
+}
+
+func (m *Manager) Backup() (BackupBundle, error) {
+	m.mu.Lock()
+	state := persistedState{
+		Current:   m.current,
+		Snapshots: append([]Snapshot(nil), m.snapshots...),
+		History:   append([]HistoryEntry(nil), m.history...),
+		NextID:    m.nextID,
+		Revision:  m.revision,
+	}
+	m.mu.Unlock()
+
+	sum, err := stateChecksum(state)
+	if err != nil {
+		return BackupBundle{}, err
+	}
+	return BackupBundle{
+		Version:   1,
+		CreatedAt: time.Now(),
+		State:     state,
+		Checksum:  sum,
+	}, nil
+}
+
+func (m *Manager) BackupJSON() ([]byte, error) {
+	backup, err := m.Backup()
+	if err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(backup, "", "  ")
+}
+
+func (m *Manager) RestoreFromBackupJSON(data []byte, meta ChangeMeta) error {
+	var backup BackupBundle
+	if err := json.Unmarshal(data, &backup); err != nil {
+		return err
+	}
+	return m.Restore(backup, meta)
+}
+
+func (m *Manager) Restore(backup BackupBundle, meta ChangeMeta) error {
+	if backup.Version != 1 {
+		return fmt.Errorf("unsupported backup version %d", backup.Version)
+	}
+	if strings.TrimSpace(backup.Checksum) == "" {
+		return errors.New("backup checksum is required")
+	}
+	expected, err := stateChecksum(backup.State)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(strings.TrimSpace(backup.Checksum), expected) {
+		return errors.New("backup checksum mismatch")
+	}
+	if err := validateState(backup.State); err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	prev := m.current
+	m.current = backup.State.Current
+	m.snapshots = append([]Snapshot(nil), backup.State.Snapshots...)
+	m.history = append([]HistoryEntry(nil), backup.State.History...)
+	m.nextID = backup.State.NextID
+	m.revision = backup.State.Revision
+
+	reason := strings.TrimSpace(meta.Reason)
+	if reason == "" {
+		reason = "restore"
+	}
+	m.history = append(m.history, HistoryEntry{
+		ID:              m.nextID,
+		Timestamp:       time.Now(),
+		Reason:          reason,
+		Revision:        m.revision,
+		Actor:           normalizeActor(meta.Actor),
+		ChangedSections: changedSections(prev, m.current),
+	})
+	m.nextID++
+
+	if err := m.persistLocked(); err != nil {
+		return fmt.Errorf("persist failed: %w", err)
+	}
+	return nil
 }
 
 func (m *Manager) DiffRevisions(fromRevision int, toRevision int) (ConfigDiff, error) {
@@ -509,4 +605,37 @@ func normalizeActor(actor string) string {
 		return "system"
 	}
 	return actor
+}
+
+func stateChecksum(state persistedState) (string, error) {
+	data, err := json.Marshal(state)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func validateState(state persistedState) error {
+	if state.Current == nil {
+		return errors.New("backup current config is required")
+	}
+	if err := Validate(state.Current); err != nil {
+		return fmt.Errorf("backup config validation failed: %w", err)
+	}
+	if state.NextID <= 0 {
+		return errors.New("backup next_id must be positive")
+	}
+	if state.Revision < 0 {
+		return errors.New("backup revision must be non-negative")
+	}
+	if len(state.Snapshots) != state.Revision {
+		return errors.New("backup snapshot/revision mismatch")
+	}
+	for i, snap := range state.Snapshots {
+		if snap.Config == nil {
+			return fmt.Errorf("backup snapshot %d has nil config", i)
+		}
+	}
+	return nil
 }

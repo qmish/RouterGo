@@ -968,6 +968,53 @@ func (h *Handlers) GetConfigHistoryExport(c *gin.Context) {
 	c.Data(http.StatusOK, "application/json; charset=utf-8", data)
 }
 
+func (h *Handlers) GetConfigBackup(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	data, err := h.ConfigMgr.BackupJSON()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "backup failed"})
+		return
+	}
+	c.Header("Content-Disposition", "attachment; filename=config-backup.json")
+	c.Data(http.StatusOK, "application/json; charset=utf-8", data)
+}
+
+func (h *Handlers) RestoreConfig(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	var req struct {
+		BackupJSON string `json:"backup_json"`
+		Actor      string `json:"actor"`
+		Reason     string `json:"reason"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	if strings.TrimSpace(req.BackupJSON) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "backup_json is required"})
+		return
+	}
+	actor := resolveActor(c, req.Actor)
+	if err := h.ConfigMgr.RestoreFromBackupJSON([]byte(req.BackupJSON), config.ChangeMeta{
+		Actor:  actor,
+		Reason: strings.TrimSpace(req.Reason),
+	}); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status":   "ok",
+		"actor":    actor,
+		"revision": h.ConfigMgr.Revision(),
+	})
+}
+
 func (h *Handlers) GetConfigDiff(c *gin.Context) {
 	if h.ConfigMgr == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -297,5 +298,58 @@ func TestManagerAuditTrailFields(t *testing.T) {
 	}
 	if len(last.ChangedSections) == 0 {
 		t.Fatalf("expected changed sections to be saved")
+	}
+}
+
+func TestManagerBackupRestoreRoundTrip(t *testing.T) {
+	base := &Config{API: APIConfig{Address: ":8080"}}
+	mgr := NewManager(base, nil)
+	if err := mgr.Apply(&Config{API: APIConfig{Address: ":8081"}}); err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+
+	backupRaw, err := mgr.BackupJSON()
+	if err != nil {
+		t.Fatalf("backup failed: %v", err)
+	}
+
+	if err := mgr.Apply(&Config{API: APIConfig{Address: ":8082"}}); err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+
+	if err := mgr.RestoreFromBackupJSON(backupRaw, ChangeMeta{Actor: "restore-user"}); err != nil {
+		t.Fatalf("restore failed: %v", err)
+	}
+	if got := mgr.Current().API.Address; got != ":8081" {
+		t.Fatalf("expected restored address :8081, got %s", got)
+	}
+	if mgr.Revision() != 1 {
+		t.Fatalf("expected restored revision 1, got %d", mgr.Revision())
+	}
+}
+
+func TestManagerRestoreChecksumMismatch(t *testing.T) {
+	base := &Config{API: APIConfig{Address: ":8080"}}
+	mgr := NewManager(base, nil)
+	if err := mgr.Apply(&Config{API: APIConfig{Address: ":8081"}}); err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+	backupRaw, err := mgr.BackupJSON()
+	if err != nil {
+		t.Fatalf("backup failed: %v", err)
+	}
+
+	var backup BackupBundle
+	if err := json.Unmarshal(backupRaw, &backup); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	backup.State.Revision++
+	tampered, err := json.Marshal(backup)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+
+	if err := mgr.RestoreFromBackupJSON(tampered, ChangeMeta{}); err == nil {
+		t.Fatalf("expected checksum mismatch error")
 	}
 }
