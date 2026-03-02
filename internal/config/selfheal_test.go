@@ -21,6 +21,9 @@ func TestManagerApplySuccess(t *testing.T) {
 	if len(mgr.Snapshots()) != 1 {
 		t.Fatalf("expected snapshot created")
 	}
+	if mgr.Revision() != 1 {
+		t.Fatalf("expected revision 1")
+	}
 }
 
 func TestManagerApplyRollbackOnFailure(t *testing.T) {
@@ -50,6 +53,12 @@ func TestManagerRollbackLast(t *testing.T) {
 	}
 	if mgr.Current() != base {
 		t.Fatalf("expected rollback to base")
+	}
+	if mgr.Revision() != 0 {
+		t.Fatalf("expected revision 0 after rollback")
+	}
+	if len(mgr.Snapshots()) != 0 {
+		t.Fatalf("expected snapshots stack to shrink after rollback")
 	}
 }
 
@@ -158,5 +167,47 @@ func TestManagerApplyWithPlanStale(t *testing.T) {
 
 	if err := mgr.ApplyWithPlan(&Config{API: APIConfig{Address: ":8082"}}, plan1); err == nil {
 		t.Fatalf("expected stale plan error")
+	}
+}
+
+func TestManagerApplyWithPlanStaleRevision(t *testing.T) {
+	base := &Config{API: APIConfig{Address: ":8080"}}
+	mgr := NewManager(base, nil)
+
+	plan, err := mgr.Plan(&Config{API: APIConfig{Address: ":8081"}})
+	if err != nil {
+		t.Fatalf("plan failed: %v", err)
+	}
+	if err := mgr.Apply(&Config{API: APIConfig{Address: ":8082"}}); err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+	if err := mgr.ApplyWithPlan(&Config{API: APIConfig{Address: ":8081"}}, plan); err == nil {
+		t.Fatalf("expected stale revision error")
+	}
+}
+
+func TestManagerRollbackTwoSteps(t *testing.T) {
+	base := &Config{API: APIConfig{Address: ":8080"}}
+	mgr := NewManager(base, nil)
+
+	cfg1 := &Config{API: APIConfig{Address: ":8081"}}
+	cfg2 := &Config{API: APIConfig{Address: ":8082"}}
+	if err := mgr.Apply(cfg1); err != nil {
+		t.Fatalf("apply cfg1 failed: %v", err)
+	}
+	if err := mgr.Apply(cfg2); err != nil {
+		t.Fatalf("apply cfg2 failed: %v", err)
+	}
+	if err := mgr.RollbackLast(); err != nil {
+		t.Fatalf("rollback1 failed: %v", err)
+	}
+	if got := mgr.Current().API.Address; got != ":8081" {
+		t.Fatalf("expected :8081 after first rollback, got %s", got)
+	}
+	if err := mgr.RollbackLast(); err != nil {
+		t.Fatalf("rollback2 failed: %v", err)
+	}
+	if got := mgr.Current().API.Address; got != ":8080" {
+		t.Fatalf("expected :8080 after second rollback, got %s", got)
 	}
 }

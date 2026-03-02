@@ -24,12 +24,15 @@ type Manager struct {
 	current   *Config
 	snapshots []Snapshot
 	nextID    int
+	revision  int
 	health    func(*Config) error
 }
 
 type ApplyPlan struct {
 	Timestamp         time.Time `json:"timestamp"`
 	PlannedSnapshotID int       `json:"planned_snapshot_id"`
+	BaseRevision      int       `json:"base_revision"`
+	TargetRevision    int       `json:"target_revision"`
 	ChangedSections   []string  `json:"changed_sections"`
 	Validation        string    `json:"validation"`
 	HealthCheck       string    `json:"health_check"`
@@ -40,6 +43,7 @@ func NewManager(cfg *Config, health func(*Config) error) *Manager {
 		current:   cfg,
 		snapshots: nil,
 		nextID:    1,
+		revision:  0,
 		health:    health,
 	}
 }
@@ -56,6 +60,12 @@ func (m *Manager) Snapshots() []Snapshot {
 	out := make([]Snapshot, 0, len(m.snapshots))
 	out = append(out, m.snapshots...)
 	return out
+}
+
+func (m *Manager) Revision() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.revision
 }
 
 func (m *Manager) Apply(newCfg *Config) error {
@@ -78,6 +88,7 @@ func (m *Manager) Plan(newCfg *Config) (ApplyPlan, error) {
 	m.mu.Lock()
 	prev := m.current
 	plannedSnapshotID := m.nextID
+	baseRevision := m.revision
 	health := m.health
 	m.mu.Unlock()
 
@@ -92,6 +103,8 @@ func (m *Manager) Plan(newCfg *Config) (ApplyPlan, error) {
 	return ApplyPlan{
 		Timestamp:         time.Now(),
 		PlannedSnapshotID: plannedSnapshotID,
+		BaseRevision:      baseRevision,
+		TargetRevision:    baseRevision + 1,
 		ChangedSections:   changedSections(prev, newCfg),
 		Validation:        "ok",
 		HealthCheck:       healthStatus,
@@ -109,6 +122,9 @@ func (m *Manager) ApplyWithPlan(newCfg *Config, plan ApplyPlan) error {
 	if plan.PlannedSnapshotID != 0 && m.nextID != plan.PlannedSnapshotID {
 		return errors.New("stale config plan")
 	}
+	if plan.BaseRevision != m.revision {
+		return errors.New("stale config revision")
+	}
 
 	prev := m.current
 	snapshot := Snapshot{
@@ -120,6 +136,7 @@ func (m *Manager) ApplyWithPlan(newCfg *Config, plan ApplyPlan) error {
 	m.nextID++
 	m.snapshots = append(m.snapshots, snapshot)
 	m.current = newCfg
+	m.revision++
 	return nil
 }
 
@@ -131,31 +148,10 @@ func (m *Manager) RollbackLast() error {
 	}
 	last := m.snapshots[len(m.snapshots)-1]
 	m.current = last.Config
-	m.snapshots = append(m.snapshots, Snapshot{
-		ID:        m.nextID,
-		Timestamp: time.Now(),
-		Reason:    "rollback",
-		Config:    last.Config,
-	})
-	m.nextID++
-	return nil
-}
-
-func (m *Manager) rollbackWithReason(reason string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if len(m.snapshots) == 0 {
-		return errors.New("no snapshots")
+	m.snapshots = m.snapshots[:len(m.snapshots)-1]
+	if m.revision > 0 {
+		m.revision--
 	}
-	last := m.snapshots[len(m.snapshots)-1]
-	m.current = last.Config
-	m.snapshots = append(m.snapshots, Snapshot{
-		ID:        m.nextID,
-		Timestamp: time.Now(),
-		Reason:    "rollback: " + reason,
-		Config:    last.Config,
-	})
-	m.nextID++
 	return nil
 }
 

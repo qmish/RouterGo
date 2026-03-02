@@ -15,9 +15,9 @@
 ## Stage 2 - P0 Config Safety
 
 - [x] `validate -> plan -> apply` для применения конфигурации.
-- [ ] Атомарное применение конфигурации (all-or-nothing).
-- [ ] Гарантированный rollback к консистентному snapshot.
-- [ ] Тесты невалидного конфига и rollback сценариев.
+- [x] Атомарное применение конфигурации (all-or-nothing).
+- [x] Гарантированный rollback к консистентному snapshot.
+- [x] Тесты невалидного конфига и rollback сценариев.
 
 ## Stage 3 - P0 Persistence and Audit
 
@@ -52,3 +52,4 @@
 - [x] 2026-03-02: Добавлены тесты `TestApplySNATRewritesIPv4UDPData` и `TestApplyDNATRewritesIPv4UDPData` в `pkg/nat/nat_test.go`.
 - [x] 2026-03-02: Добавлен `TestSmokePacketPipelineThroughput` (`cmd/router/smoke_test.go`) и зафиксирован baseline в `docs/performance-smoke.md`.
 - [x] 2026-03-02: Реализован API-процесс `validate -> plan -> apply` (`POST /api/config/plan`, обновлен `/api/config/apply`) с тестами.
+- [x] 2026-03-02: Усилен atomic apply (plan+revision), rollback сделан стековым и консистентным; добавлены тесты невалидного apply/plan и rollback без snapshot.
