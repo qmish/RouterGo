@@ -25,24 +25,32 @@ const (
 
 func AuthMiddleware(cfg config.SecurityConfig, log *logger.Logger) gin.HandlerFunc {
 	roles := map[string]string{}
+	scopesByValue := map[string][]string{}
+	tokenIDByValue := map[string]string{}
 	var hashedTokens []hashedToken
 	allowedNets := parseAllowedCIDRs(cfg.AllowedCIDRs)
 	allowlistEnabled := cfg.Enabled && len(cfg.AllowedCIDRs) > 0
 	for _, token := range cfg.Tokens {
+		if token.Disabled {
+			continue
+		}
 		value := config.ResolveSecret(token.Value)
 		if value == "" || token.Role == "" {
 			continue
 		}
 		role := strings.ToLower(token.Role)
+		scopes := normalizeScopes(token.Scopes, role)
 		if strings.HasPrefix(value, "sha256:") {
 			decoded, err := hex.DecodeString(strings.TrimPrefix(value, "sha256:"))
 			if err != nil || len(decoded) == 0 {
 				continue
 			}
-			hashedTokens = append(hashedTokens, hashedToken{role: role, hash: decoded})
+			hashedTokens = append(hashedTokens, hashedToken{role: role, hash: decoded, scopes: scopes, id: token.ID})
 			continue
 		}
 		roles[value] = role
+		scopesByValue[value] = scopes
+		tokenIDByValue[value] = token.ID
 	}
 	return func(c *gin.Context) {
 		if !cfg.Enabled || !cfg.RequireAuth {
@@ -57,6 +65,8 @@ func AuthMiddleware(cfg config.SecurityConfig, log *logger.Logger) gin.HandlerFu
 				}
 			}
 			c.Set("role", roleAdmin)
+			c.Set("scopes", defaultScopesForRole(roleAdmin))
+			c.Set("token_id", "")
 			c.Next()
 			return
 		}
@@ -82,11 +92,15 @@ func AuthMiddleware(cfg config.SecurityConfig, log *logger.Logger) gin.HandlerFu
 			}
 		}
 		role, ok := roles[token]
+		scopes := scopesByValue[token]
+		tokenID := tokenIDByValue[token]
 		if !ok && token != "" && len(hashedTokens) > 0 {
 			sum := sha256.Sum256([]byte(token))
 			for _, entry := range hashedTokens {
 				if subtle.ConstantTimeCompare(entry.hash, sum[:]) == 1 {
 					role = entry.role
+					scopes = entry.scopes
+					tokenID = entry.id
 					ok = true
 					break
 				}
@@ -100,6 +114,8 @@ func AuthMiddleware(cfg config.SecurityConfig, log *logger.Logger) gin.HandlerFu
 			log.Debug("auth ok", map[string]any{"role": role, "path": c.FullPath()})
 		}
 		c.Set("role", role)
+		c.Set("scopes", scopes)
+		c.Set("token_id", tokenID)
 		c.Next()
 	}
 }
@@ -200,8 +216,84 @@ func roleOrder(role string) int {
 }
 
 type hashedToken struct {
-	role string
-	hash []byte
+	role   string
+	hash   []byte
+	scopes []string
+	id     string
+}
+
+func RequireScope(required string) gin.HandlerFunc {
+	required = strings.TrimSpace(required)
+	return func(c *gin.Context) {
+		if required == "" {
+			c.Next()
+			return
+		}
+		if _, roleSet := c.Get("role"); !roleSet {
+			c.Next()
+			return
+		}
+		raw, ok := c.Get("scopes")
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+		scopes, ok := raw.([]string)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+		if hasScope(scopes, required) {
+			c.Next()
+			return
+		}
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+	}
+}
+
+func hasScope(scopes []string, required string) bool {
+	required = strings.ToLower(strings.TrimSpace(required))
+	for _, scope := range scopes {
+		scope = strings.ToLower(strings.TrimSpace(scope))
+		if scope == "*" || scope == "admin:*" || scope == required {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeScopes(scopes []string, role string) []string {
+	if len(scopes) == 0 {
+		return defaultScopesForRole(role)
+	}
+	out := make([]string, 0, len(scopes))
+	seen := map[string]struct{}{}
+	for _, scope := range scopes {
+		scope = strings.ToLower(strings.TrimSpace(scope))
+		if scope == "" {
+			continue
+		}
+		if _, ok := seen[scope]; ok {
+			continue
+		}
+		seen[scope] = struct{}{}
+		out = append(out, scope)
+	}
+	if len(out) == 0 {
+		return defaultScopesForRole(role)
+	}
+	return out
+}
+
+func defaultScopesForRole(role string) []string {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case roleAdmin:
+		return []string{"admin:*", "config:read", "config:write", "security:read", "security:write"}
+	case roleOps:
+		return []string{"config:read", "config:write"}
+	default:
+		return []string{"config:read"}
+	}
 }
 
 func parseAllowedCIDRs(list []string) []*net.IPNet {

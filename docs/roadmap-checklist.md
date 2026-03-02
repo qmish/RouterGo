@@ -28,17 +28,17 @@
 
 ## Stage 4 - Security Baseline
 
-- [ ] RBAC для API/UI.
-- [ ] API keys со scope и ротацией.
-- [ ] TLS/mTLS hardening для управляющего контура.
-- [ ] Security checks в CI (dependency scanning + policy gate).
+- [x] RBAC для API/UI.
+- [x] API keys со scope и ротацией.
+- [x] TLS/mTLS hardening для управляющего контура.
+- [x] Security checks в CI (dependency scanning + policy gate).
 
 ## Stage 5 - Product UX and Pilot Readiness
 
-- [ ] Завершение всех страниц settings/dashboard.
-- [ ] Setup wizard первичной настройки.
-- [ ] Presets для типовых сценариев.
-- [ ] Pilot-pack (quickstart, runbook, troubleshooting) и KPI пилота.
+- [x] Завершение всех страниц settings/dashboard.
+- [x] Setup wizard первичной настройки.
+- [x] Presets для типовых сценариев.
+- [x] Pilot-pack (quickstart, runbook, troubleshooting) и KPI пилота.
 
 ## Progress Log
 
@@ -57,3 +57,5 @@
 - [x] 2026-03-02: Добавлен API diff ревизий конфигурации `GET /api/config/diff` и методы versioning/diff в config manager (Stage 3, блок 2).
 - [x] 2026-03-02: Добавлен audit trail конфигурации (`actor/reason/changed_sections`) и экспорт истории `GET /api/config/history/export` (Stage 3, блок 3).
 - [x] 2026-03-02: Добавлены backup/restore config manager с checksum-верификацией (`GET /api/config/backup`, `POST /api/config/restore`) и тестами восстановления (Stage 3, блок 4).
+- [x] 2026-03-03: Реализованы Stage 4 security baseline: `GET /api/auth/me`, managed API keys (list/create/rotate/revoke), UI RBAC по роли, TLS hardening (TLS1.3 + mTLS checks), CI security workflow (`gosec`, `govulncheck`).
+- [x] 2026-03-03: Закрыт Stage 5: завершены страницы settings/dashboard (API keys + backup/restore в UI), добавлен Setup Wizard на пресетах, подготовлен pilot-pack `docs/pilot-pack.md`.

@@ -17,6 +17,9 @@ routes:
 security:
   enabled: true
   require_auth: false
+  tokens:
+    - role: admin
+      value: test-admin-token
 `)
 	cfg, err := LoadFromBytes(data)
 	if err != nil {
@@ -96,6 +99,32 @@ func TestValidateWrapper(t *testing.T) {
 	}
 	if err := Validate(cfg); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadFromBytesTLSRequireClientCertNeedsCA(t *testing.T) {
+	data := []byte(`
+interfaces:
+  - name: eth0
+routes:
+  - destination: 0.0.0.0/0
+    gateway: 192.0.2.1
+    interface: eth0
+security:
+  enabled: true
+  require_auth: true
+  tokens:
+    - role: admin
+      value: test-admin-token
+  tls:
+    enabled: true
+    cert_file: cert.pem
+    key_file: key.pem
+    require_client_cert: true
+`)
+	_, err := LoadFromBytes(data)
+	if err == nil {
+		t.Fatalf("expected error when require_client_cert has no client_ca_file")
 	}
 }
 

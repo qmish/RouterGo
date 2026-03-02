@@ -15,6 +15,7 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	}
 
 	apiGroup.GET("/interfaces", RequireRole(roleRead), handlers.GetInterfaces)
+	apiGroup.GET("/auth/me", RequireRole(roleRead), handlers.GetAuthInfo)
 	apiGroup.GET("/routes", RequireRole(roleRead), handlers.GetRoutes)
 	apiGroup.POST("/routes", RequireRole(roleOps), handlers.AddRoute)
 	apiGroup.DELETE("/routes", RequireRole(roleOps), handlers.DeleteRoute)
@@ -44,6 +45,10 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	apiGroup.POST("/config/restore", RequireRole(roleOps), handlers.RestoreConfig)
 	apiGroup.GET("/config/diff", RequireRole(roleRead), handlers.GetConfigDiff)
 	apiGroup.GET("/config/export", RequireRole(roleRead), handlers.GetConfigExport)
+	apiGroup.GET("/security/keys", RequireRole(roleAdmin), RequireScope("security:read"), handlers.ListAPIKeys)
+	apiGroup.POST("/security/keys", RequireRole(roleAdmin), RequireScope("security:write"), handlers.CreateAPIKey)
+	apiGroup.POST("/security/keys/:id/rotate", RequireRole(roleAdmin), RequireScope("security:write"), handlers.RotateAPIKey)
+	apiGroup.POST("/security/keys/:id/revoke", RequireRole(roleAdmin), RequireScope("security:write"), handlers.RevokeAPIKey)
 	apiGroup.GET("/monitoring/summary", RequireRole(roleRead), handlers.GetMonitoringSummary)
 	apiGroup.GET("/system/time", RequireRole(roleRead), handlers.GetSystemTimeSettings)
 	apiGroup.POST("/system/time", RequireRole(roleOps), handlers.UpdateSystemTimeSettings)

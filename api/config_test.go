@@ -375,3 +375,64 @@ func TestRestoreConfigInvalidBackup(t *testing.T) {
 		t.Fatalf("expected 400 for invalid backup, got %d", w.Code)
 	}
 }
+
+func TestGetAuthInfo(t *testing.T) {
+	router := setupConfigRouter(func(*config.Config) error { return nil })
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestAPIKeysCreateRotateRevoke(t *testing.T) {
+	router := setupConfigRouter(func(*config.Config) error { return nil })
+
+	createPayload := map[string]any{
+		"role":   "admin",
+		"scopes": []string{"security:read", "security:write"},
+	}
+	body, _ := json.Marshal(createPayload)
+	req := httptest.NewRequest(http.MethodPost, "/api/security/keys", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on create, got %d", w.Code)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("invalid create response: %v", err)
+	}
+	id, _ := created["id"].(string)
+	if id == "" {
+		t.Fatalf("expected key id in create response")
+	}
+	if _, ok := created["api_key"]; !ok {
+		t.Fatalf("expected api_key in create response")
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/security/keys", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on list, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/security/keys/"+id+"/rotate", bytes.NewReader([]byte("{}")))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on rotate, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/security/keys/"+id+"/revoke", bytes.NewReader([]byte("{}")))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on revoke, got %d", w.Code)
+	}
+}

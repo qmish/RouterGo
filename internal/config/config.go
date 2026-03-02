@@ -83,13 +83,13 @@ type QoSClassConfig struct {
 }
 
 type IDSConfig struct {
-	Enabled            bool   `mapstructure:"enabled"`
-	WindowSeconds      int    `mapstructure:"window_seconds"`
-	RateThreshold      int    `mapstructure:"rate_threshold"`
-	PortScanThreshold  int    `mapstructure:"portscan_threshold"`
-	UniqueDstThreshold int    `mapstructure:"unique_dst_threshold"`
-	BehaviorAction     string `mapstructure:"behavior_action"`
-	AlertLimit         int    `mapstructure:"alert_limit"`
+	Enabled            bool     `mapstructure:"enabled"`
+	WindowSeconds      int      `mapstructure:"window_seconds"`
+	RateThreshold      int      `mapstructure:"rate_threshold"`
+	PortScanThreshold  int      `mapstructure:"portscan_threshold"`
+	UniqueDstThreshold int      `mapstructure:"unique_dst_threshold"`
+	BehaviorAction     string   `mapstructure:"behavior_action"`
+	AlertLimit         int      `mapstructure:"alert_limit"`
 	WhitelistSrc       []string `mapstructure:"whitelist_src"`
 	WhitelistDst       []string `mapstructure:"whitelist_dst"`
 }
@@ -172,37 +172,42 @@ type MetricsExportConfig struct {
 }
 
 type SecurityConfig struct {
-	Enabled       bool          `mapstructure:"enabled"`
-	RequireAuth   bool          `mapstructure:"require_auth"`
-	AllowedCIDRs  []string      `mapstructure:"allowed_cidrs"`
-	Tokens        []TokenConfig `mapstructure:"tokens"`
-	TLS           TLSConfig     `mapstructure:"tls"`
+	Enabled      bool          `mapstructure:"enabled"`
+	RequireAuth  bool          `mapstructure:"require_auth"`
+	AllowedCIDRs []string      `mapstructure:"allowed_cidrs"`
+	Tokens       []TokenConfig `mapstructure:"tokens"`
+	TLS          TLSConfig     `mapstructure:"tls"`
 }
 
 type TokenConfig struct {
-	Role  string `mapstructure:"role"`
-	Value string `mapstructure:"value"`
+	ID        string   `mapstructure:"id"`
+	Role      string   `mapstructure:"role"`
+	Scopes    []string `mapstructure:"scopes"`
+	Value     string   `mapstructure:"value"`
+	CreatedAt string   `mapstructure:"created_at"`
+	RotatedAt string   `mapstructure:"rotated_at"`
+	Disabled  bool     `mapstructure:"disabled"`
 }
 
 type TLSConfig struct {
-	Enabled        bool   `mapstructure:"enabled"`
-	CertFile       string `mapstructure:"cert_file"`
-	KeyFile        string `mapstructure:"key_file"`
-	ClientCAFile   string `mapstructure:"client_ca_file"`
-	RequireClientCert bool `mapstructure:"require_client_cert"`
+	Enabled           bool   `mapstructure:"enabled"`
+	CertFile          string `mapstructure:"cert_file"`
+	KeyFile           string `mapstructure:"key_file"`
+	ClientCAFile      string `mapstructure:"client_ca_file"`
+	RequireClientCert bool   `mapstructure:"require_client_cert"`
 }
 
 type HAConfig struct {
-	Enabled            bool     `mapstructure:"enabled"`
-	NodeID             string   `mapstructure:"node_id"`
-	Priority           int      `mapstructure:"priority"`
-	HeartbeatInterval  int      `mapstructure:"heartbeat_interval_seconds"`
-	HoldSeconds        int      `mapstructure:"hold_seconds"`
-	BindAddr           string   `mapstructure:"bind_addr"`
-	MulticastAddr      string   `mapstructure:"multicast_addr"`
-	Peers              []string `mapstructure:"peers"`
-	StateSyncInterval  int      `mapstructure:"state_sync_interval_seconds"`
-	StateEndpointPath  string   `mapstructure:"state_endpoint_path"`
+	Enabled           bool      `mapstructure:"enabled"`
+	NodeID            string    `mapstructure:"node_id"`
+	Priority          int       `mapstructure:"priority"`
+	HeartbeatInterval int       `mapstructure:"heartbeat_interval_seconds"`
+	HoldSeconds       int       `mapstructure:"hold_seconds"`
+	BindAddr          string    `mapstructure:"bind_addr"`
+	MulticastAddr     string    `mapstructure:"multicast_addr"`
+	Peers             []string  `mapstructure:"peers"`
+	StateSyncInterval int       `mapstructure:"state_sync_interval_seconds"`
+	StateEndpointPath string    `mapstructure:"state_endpoint_path"`
 	TLS               TLSConfig `mapstructure:"tls"`
 }
 
@@ -221,16 +226,16 @@ type PerformanceConfig struct {
 }
 
 type ObservabilityConfig struct {
-	Enabled      bool   `mapstructure:"enabled"`
-	TracesLimit  int    `mapstructure:"traces_limit"`
-	PprofEnabled bool   `mapstructure:"pprof_enabled"`
-	PprofPath    string `mapstructure:"pprof_path"`
-	AlertsEnabled       bool   `mapstructure:"alerts_enabled"`
-	AlertsLimit         int    `mapstructure:"alerts_limit"`
-	AlertIntervalSeconds int   `mapstructure:"alert_interval_seconds"`
-	DropsThreshold      uint64 `mapstructure:"drops_threshold"`
-	ErrorsThreshold     uint64 `mapstructure:"errors_threshold"`
-	IDSAlertsThreshold  uint64 `mapstructure:"ids_alerts_threshold"`
+	Enabled              bool   `mapstructure:"enabled"`
+	TracesLimit          int    `mapstructure:"traces_limit"`
+	PprofEnabled         bool   `mapstructure:"pprof_enabled"`
+	PprofPath            string `mapstructure:"pprof_path"`
+	AlertsEnabled        bool   `mapstructure:"alerts_enabled"`
+	AlertsLimit          int    `mapstructure:"alerts_limit"`
+	AlertIntervalSeconds int    `mapstructure:"alert_interval_seconds"`
+	DropsThreshold       uint64 `mapstructure:"drops_threshold"`
+	ErrorsThreshold      uint64 `mapstructure:"errors_threshold"`
+	IDSAlertsThreshold   uint64 `mapstructure:"ids_alerts_threshold"`
 }
 
 type LoggingConfig struct {
@@ -419,6 +424,38 @@ func validate(cfg *Config) error {
 		if route.Destination == "" {
 			return fmt.Errorf("routes[%d].destination is required", i)
 		}
+	}
+	validRoles := map[string]struct{}{
+		"admin": {},
+		"ops":   {},
+		"read":  {},
+	}
+	activeTokens := 0
+	for i, token := range cfg.Security.Tokens {
+		role := strings.ToLower(strings.TrimSpace(token.Role))
+		if role == "" {
+			return fmt.Errorf("security.tokens[%d].role is required", i)
+		}
+		if _, ok := validRoles[role]; !ok {
+			return fmt.Errorf("security.tokens[%d].role is invalid", i)
+		}
+		if strings.TrimSpace(token.Value) == "" {
+			return fmt.Errorf("security.tokens[%d].value is required", i)
+		}
+		if !token.Disabled {
+			activeTokens++
+		}
+	}
+	if cfg.Security.Enabled && cfg.Security.RequireAuth && activeTokens == 0 {
+		return fmt.Errorf("security.tokens requires at least one active token")
+	}
+	if cfg.Security.TLS.Enabled {
+		if strings.TrimSpace(cfg.Security.TLS.CertFile) == "" || strings.TrimSpace(cfg.Security.TLS.KeyFile) == "" {
+			return fmt.Errorf("security.tls cert_file and key_file are required")
+		}
+	}
+	if cfg.Security.TLS.RequireClientCert && strings.TrimSpace(cfg.Security.TLS.ClientCAFile) == "" {
+		return fmt.Errorf("security.tls client_ca_file is required when require_client_cert is true")
 	}
 	return nil
 }

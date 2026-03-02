@@ -36,6 +36,9 @@
   <body>
     <div style="display:flex; align-items:center; gap:12px; flex-wrap: wrap;">
       <h1 style="margin-right:auto;">RouterGo Dashboard</h1>
+      <input id="apiKeyInput" type="password" placeholder="API key" style="padding:6px; border:1px solid #e5e7eb; border-radius:6px;">
+      <button id="saveApiKeyBtn">Подключить ключ</button>
+      <span id="authRoleBadge" class="pill">role: unknown</span>
       <button id="openPresetsBtn">Настроить по шаблону</button>
     </div>
     <div class="meta">Автообновление</div>
@@ -408,16 +411,57 @@
       <div class="card">
         <h3>API и интеграции</h3>
         <div class="meta">/settings/api</div>
-        <div class="muted">API ключи, webhooks, экспорт конфигурации.</div>
+        <div class="muted">API ключи, экспорт конфигурации, backup/restore.</div>
+        <table id="apiKeysTable" style="margin-top:8px;">
+          <thead>
+            <tr><th>ID</th><th>Role</th><th>Scopes</th><th>Disabled</th><th>Actions</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="form-row settings-section">
+          <select id="apiKeyRole">
+            <option value="admin">admin</option>
+            <option value="ops" selected>ops</option>
+            <option value="read">read</option>
+          </select>
+          <input id="apiKeyScopes" placeholder="scopes (через запятую)">
+        </div>
+        <div class="form-actions">
+          <button id="createApiKeyBtn">Создать API key</button>
+        </div>
+        <div id="apiKeyCreatedValue" class="muted"></div>
         <div class="form-actions settings-section">
           <button id="exportConfigJsonBtn">Экспорт JSON</button>
           <button id="exportConfigYamlBtn">Экспорт YAML</button>
+          <button id="exportBackupBtn">Экспорт backup</button>
         </div>
-        <div class="muted settings-section">Остальные функции в разработке.</div>
+        <div class="form-row">
+          <textarea id="restoreBackupInput" placeholder="Вставьте backup JSON" style="width:100%; min-height:80px;"></textarea>
+        </div>
+        <div class="form-actions">
+          <button id="restoreBackupBtn">Восстановить backup</button>
+        </div>
       </div>
     </div>
 
     <div id="tab-presets" class="grid gridWide" style="margin-top: 12px;">
+      <div class="card">
+        <h3>Setup Wizard</h3>
+        <div class="meta">Первичная настройка в 3 шага</div>
+        <div class="form-row settings-section">
+          <input id="wizardInterfaceName" placeholder="Интерфейс (eth0)">
+          <input id="wizardInterfaceIP" placeholder="LAN CIDR (192.168.10.1/24)">
+          <input id="wizardGateway" placeholder="Gateway (192.168.10.254)">
+        </div>
+        <div class="form-row">
+          <select id="wizardPresetSelect"></select>
+        </div>
+        <div class="form-actions">
+          <button id="wizardPreviewBtn">Проверить</button>
+          <button id="wizardApplyBtn">Применить</button>
+        </div>
+        <div id="wizardStatus" class="muted"></div>
+      </div>
       <div class="card">
         <h3>Быстрая настройка → Пресеты</h3>
         <div class="meta">Выберите профиль и посмотрите сводку изменений.</div>
@@ -457,9 +501,75 @@
       let history = [];
       let refreshTimer = null;
       const storageKey = 'routergo_ui';
+      const authStorageKey = 'routergo_auth';
       let presetsList = [];
       let selectedPresetId = '';
       let lastPresetPreview = null;
+      let authState = { apiKey: '', role: 'unknown', scopes: [] };
+      const nativeFetch = window.fetch.bind(window);
+
+      window.fetch = (input, init = {}) => {
+        const headers = new Headers(init.headers || {});
+        if (authState.apiKey) {
+          headers.set('X-API-Key', authState.apiKey);
+        }
+        return nativeFetch(input, { ...init, headers });
+      };
+
+      function roleWeight(role) {
+        const normalized = (role || '').toLowerCase();
+        if (normalized === 'admin') return 3;
+        if (normalized === 'ops') return 2;
+        if (normalized === 'read') return 1;
+        return 0;
+      }
+
+      function canWrite() {
+        return roleWeight(authState.role) >= roleWeight('ops');
+      }
+
+      function applyRBACUI() {
+        const writeSelectors = [
+          '#addRouteBtn', '#updateRouteBtn',
+          '#addFirewallBtn', '#updateFirewallBtn', '#setFirewallDefaultBtn',
+          '#addNATBtn', '#updateNATBtn',
+          '#addQoSBtn', '#updateQoSBtn',
+          '#addVPNBtn', '#updateVPNBtn',
+          '#addDHCPBtn', '#updateDHCPBtn',
+          '#addDHCPResBtn', '#updateDHCPResBtn',
+          '#saveSystemTimeBtn', '#saveSystemTLSBtn',
+          '#createApiKeyBtn', '#restoreBackupBtn'
+        ];
+        const disable = !canWrite();
+        writeSelectors.forEach(sel => {
+          const el = document.querySelector(sel);
+          if (el) el.disabled = disable || el.disabled;
+        });
+        document.querySelectorAll('.route-delete,.route-edit,.fw-delete,.fw-edit,.nat-delete,.nat-edit,.qos-delete,.qos-edit,.vpn-delete,.vpn-edit,.dhcp-delete,.dhcp-edit,.dhcp-res-delete,.dhcp-res-edit,.key-rotate,.key-revoke').forEach(el => {
+          el.disabled = disable;
+        });
+        document.getElementById('authRoleBadge').textContent = `role: ${authState.role || 'unknown'}`;
+      }
+
+      async function refreshAuthInfo() {
+        try {
+          const res = await fetch('/api/auth/me');
+          if (!res.ok) {
+            authState.role = 'unknown';
+            authState.scopes = [];
+            applyRBACUI();
+            return;
+          }
+          const info = await res.json();
+          authState.role = info.role || 'unknown';
+          authState.scopes = Array.isArray(info.scopes) ? info.scopes : [];
+          applyRBACUI();
+        } catch (_) {
+          authState.role = 'unknown';
+          authState.scopes = [];
+          applyRBACUI();
+        }
+      }
 
       function demoTop() {
         const labels = Array.from({length: 8}, (_, i) => `10.0.0.${i+1}`);
@@ -531,10 +641,10 @@
         return res.json();
       }
 
-      function buildOverridesPayload() {
-        const ifaceName = document.getElementById('presetInterfaceName')?.value.trim();
-        const ifaceIP = document.getElementById('presetInterfaceIP')?.value.trim();
-        const gateway = document.getElementById('presetGateway')?.value.trim();
+      function buildOverridesPayload(prefix = 'preset') {
+        const ifaceName = document.getElementById(`${prefix}InterfaceName`)?.value.trim();
+        const ifaceIP = document.getElementById(`${prefix}InterfaceIP`)?.value.trim();
+        const gateway = document.getElementById(`${prefix}Gateway`)?.value.trim();
         const overrides = {};
         if (ifaceName) {
           overrides.interface_name = ifaceName;
@@ -548,8 +658,10 @@
         return Object.keys(overrides).length ? { overrides } : {};
       }
 
-      async function previewPreset(id) {
-        const payload = buildOverridesPayload();
+      async function previewPreset(id, payload = null) {
+        if (!payload) {
+          payload = buildOverridesPayload();
+        }
         const res = await fetch(`/api/presets/${encodeURIComponent(id)}/preview`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -562,8 +674,10 @@
         return res.json();
       }
 
-      async function applyPreset(id) {
-        const payload = buildOverridesPayload();
+      async function applyPreset(id, payload = null) {
+        if (!payload) {
+          payload = buildOverridesPayload();
+        }
         const res = await fetch(`/api/presets/${encodeURIComponent(id)}/apply`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -762,6 +876,19 @@
         grid.querySelectorAll('.preset-apply').forEach(btn => {
           btn.addEventListener('click', () => confirmApplyPreset(btn.dataset.id));
         });
+        renderWizardPresetOptions(list);
+      }
+
+      function renderWizardPresetOptions(list) {
+        const select = document.getElementById('wizardPresetSelect');
+        if (!select) {
+          return;
+        }
+        if (!Array.isArray(list) || list.length === 0) {
+          select.innerHTML = '<option value="">Нет пресетов</option>';
+          return;
+        }
+        select.innerHTML = list.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
       }
 
       function renderPresetDetail(preset, summary, error) {
@@ -888,6 +1015,9 @@
       }
 
       async function apiPost(url, payload) {
+        if (!canWrite()) {
+          throw new Error('Недостаточно прав (нужна роль ops/admin)');
+        }
         const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -901,6 +1031,9 @@
       }
 
       async function apiDelete(url, payload) {
+        if (!canWrite()) {
+          throw new Error('Недостаточно прав (нужна роль ops/admin)');
+        }
         const res = await fetch(url, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
@@ -914,6 +1047,9 @@
       }
 
       async function apiPut(url, payload) {
+        if (!canWrite()) {
+          throw new Error('Недостаточно прав (нужна роль ops/admin)');
+        }
         const res = await fetch(url, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -989,6 +1125,10 @@
 
       async function loadDHCPReservations() {
         return apiGet('/api/dhcp/reservations');
+      }
+
+      async function loadAPIKeys() {
+        return apiGet('/api/security/keys');
       }
 
       function renderEmptyRow(tbody, cols, text) {
@@ -1282,9 +1422,29 @@
         `).join('');
       }
 
+      function renderAPIKeys(list) {
+        const tbody = document.querySelector('#apiKeysTable tbody');
+        if (!list || list.length === 0) {
+          renderEmptyRow(tbody, 5, 'Ключи не найдены');
+          return;
+        }
+        tbody.innerHTML = list.map(k => `
+          <tr>
+            <td>${k.id || ''}</td>
+            <td>${k.role || ''}</td>
+            <td>${(k.scopes || []).join(', ')}</td>
+            <td>${k.disabled ? 'yes' : 'no'}</td>
+            <td>
+              <button class="key-rotate" data-id="${k.id || ''}">Rotate</button>
+              <button class="key-revoke" data-id="${k.id || ''}">Revoke</button>
+            </td>
+          </tr>
+        `).join('');
+      }
+
       async function refreshSettings() {
         try {
-          const [routes, firewall, nat, qos, defaults, interfaces, monitoring, systemTime, systemTLS, vpnPeers, dhcpPools, dhcpReservations] = await Promise.all([
+          const [routes, firewall, nat, qos, defaults, interfaces, monitoring, systemTime, systemTLS, vpnPeers, dhcpPools, dhcpReservations, apiKeys] = await Promise.all([
             loadRoutes(),
             loadFirewall(),
             loadNAT(),
@@ -1296,7 +1456,8 @@
             loadSystemTLSSettings(),
             loadVPNPeers(),
             loadDHCPPools(),
-            loadDHCPReservations()
+            loadDHCPReservations(),
+            loadAPIKeys()
           ]);
           renderRoutes(routes);
           renderFirewall(firewall);
@@ -1309,12 +1470,14 @@
           renderVPNPeers(vpnPeers);
           renderDHCPPools(dhcpPools);
           renderDHCPReservations(dhcpReservations);
+          renderAPIKeys(apiKeys);
           if (defaults) {
             const chain = document.getElementById('fwDefaultChain').value;
             if (defaults[chain]) {
               document.getElementById('fwDefaultAction').value = defaults[chain];
             }
           }
+          applyRBACUI();
         } catch (e) {
           console.error(e);
         }
@@ -1353,6 +1516,16 @@
           tab: document.querySelector('.nav button.active')?.dataset.tab || 'overview'
         };
         localStorage.setItem(storageKey, JSON.stringify(data));
+      }
+
+      function saveAuth() {
+        localStorage.setItem(authStorageKey, JSON.stringify({ apiKey: authState.apiKey || '' }));
+      }
+
+      function loadAuth() {
+        const data = JSON.parse(localStorage.getItem(authStorageKey) || '{}');
+        authState.apiKey = data.apiKey || '';
+        document.getElementById('apiKeyInput').value = authState.apiKey;
       }
 
       function loadSettings() {
@@ -1400,6 +1573,12 @@
         setTab('presets');
         saveSettings();
       });
+      document.getElementById('saveApiKeyBtn').addEventListener('click', async () => {
+        authState.apiKey = document.getElementById('apiKeyInput').value.trim();
+        saveAuth();
+        await refreshAuthInfo();
+        refreshAll();
+      });
       document.getElementById('updatePresetsBtn').addEventListener('click', async () => {
         try {
           const res = await updatePresets();
@@ -1423,6 +1602,39 @@
           alert('Импорт завершён');
         } catch (e) {
           alert(e.message);
+        }
+      });
+      document.getElementById('wizardPreviewBtn').addEventListener('click', async () => {
+        const presetID = document.getElementById('wizardPresetSelect').value;
+        if (!presetID) {
+          alert('Выберите пресет');
+          return;
+        }
+        const payload = buildOverridesPayload('wizard');
+        try {
+          const out = await previewPreset(presetID, payload);
+          document.getElementById('wizardStatus').textContent = `Проверка OK: routes ${out.summary.routes_before} -> ${out.summary.routes_after}, firewall ${out.summary.firewall_rules_before} -> ${out.summary.firewall_rules_after}`;
+        } catch (e) {
+          document.getElementById('wizardStatus').textContent = `Ошибка: ${e.message}`;
+        }
+      });
+      document.getElementById('wizardApplyBtn').addEventListener('click', async () => {
+        if (!canWrite()) {
+          alert('Недостаточно прав');
+          return;
+        }
+        const presetID = document.getElementById('wizardPresetSelect').value;
+        if (!presetID) {
+          alert('Выберите пресет');
+          return;
+        }
+        const payload = buildOverridesPayload('wizard');
+        try {
+          await applyPreset(presetID, payload);
+          document.getElementById('wizardStatus').textContent = 'Пресет применён через Setup Wizard';
+          await refreshSettings();
+        } catch (e) {
+          document.getElementById('wizardStatus').textContent = `Ошибка: ${e.message}`;
         }
       });
 
@@ -1852,6 +2064,89 @@
         }
       });
 
+      document.getElementById('exportBackupBtn').addEventListener('click', async () => {
+        try {
+          const res = await fetch('/api/config/backup');
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || 'Ошибка экспорта backup');
+          }
+          const blob = await res.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'routergo-backup.json';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('restoreBackupBtn').addEventListener('click', async () => {
+        if (!canWrite()) {
+          alert('Недостаточно прав');
+          return;
+        }
+        const backupJSON = document.getElementById('restoreBackupInput').value.trim();
+        if (!backupJSON) {
+          alert('Вставьте backup JSON');
+          return;
+        }
+        try {
+          await apiPost('/api/config/restore', { backup_json: backupJSON, reason: 'ui restore' });
+          alert('Backup восстановлен');
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('createApiKeyBtn').addEventListener('click', async () => {
+        if (!canWrite()) {
+          alert('Недостаточно прав');
+          return;
+        }
+        const role = document.getElementById('apiKeyRole').value;
+        const scopesRaw = document.getElementById('apiKeyScopes').value.trim();
+        const scopes = scopesRaw ? scopesRaw.split(',').map(v => v.trim()).filter(Boolean) : [];
+        try {
+          const out = await apiPost('/api/security/keys', { role, scopes });
+          document.getElementById('apiKeyCreatedValue').textContent = `Новый API key (сохраните сейчас): ${out.api_key || ''}`;
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      document.getElementById('apiKeysTable').addEventListener('click', async (event) => {
+        const target = event.target;
+        if (!target.classList.contains('key-rotate') && !target.classList.contains('key-revoke')) {
+          return;
+        }
+        if (!canWrite()) {
+          alert('Недостаточно прав');
+          return;
+        }
+        const id = target.dataset.id || '';
+        if (!id) {
+          return;
+        }
+        try {
+          if (target.classList.contains('key-rotate')) {
+            const out = await apiPost(`/api/security/keys/${encodeURIComponent(id)}/rotate`, {});
+            document.getElementById('apiKeyCreatedValue').textContent = `Rotated API key (${id}): ${out.api_key || ''}`;
+          } else {
+            await apiPost(`/api/security/keys/${encodeURIComponent(id)}/revoke`, {});
+          }
+          await refreshSettings();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
       document.getElementById('loadSystemTimeBtn').addEventListener('click', async () => {
         try {
           const data = await loadSystemTimeSettings();
@@ -2260,7 +2555,9 @@
         }
       });
 
+      loadAuth();
       loadSettings();
+      refreshAuthInfo();
       refreshAll();
       loadPresets().then(list => {
         presetsList = list;

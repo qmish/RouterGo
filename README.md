@@ -54,6 +54,11 @@ go build -o p2pkeygen cmd/p2pkeygen/main.go
 - `GET /api/config/backup` — backup состояния config manager (JSON + checksum)
 - `POST /api/config/restore` — восстановление состояния из backup с верификацией checksum
 - `GET /api/config/diff?from=0&to=1` — diff между ревизиями конфигурации
+- `GET /api/auth/me` — текущая роль/scopes по API ключу
+- `GET /api/security/keys` — список управляемых API ключей
+- `POST /api/security/keys` — создание API ключа с role/scopes
+- `POST /api/security/keys/{id}/rotate` — ротация API ключа
+- `POST /api/security/keys/{id}/revoke` — отзыв API ключа
 - `GET /api/dashboard/top/bandwidth` — топ потребителей трафика
 - `GET /api/dashboard/sessions/tree` — дерево сессий
 - `GET /api/dashboard/alerts` — алерты в реальном времени
@@ -70,6 +75,11 @@ go build -o p2pkeygen cmd/p2pkeygen/main.go
 - `GET /api/observability/traces` — последние API‑трейсы
 - `GET /api/observability/alerts` — последние алерты
 - `GET /api/stats` — базовая статистика (rx/tx/пакеты/байты/ошибки/дропы/причины/классы QoS/конфиг/p2p/proxy)
+
+В Dashboard добавлены:
+- авторизация по API key (`/api/auth/me`);
+- Setup Wizard первичной настройки на базе пресетов;
+- раздел API settings для create/rotate/revoke ключей и backup/restore.
 
 ## План: раздел настроек UI
 
@@ -248,7 +258,22 @@ system:
   state_store_path: data/config-state.json
 ```
 
+Security tokens with scopes:
+
+```yaml
+security:
+  enabled: true
+  require_auth: true
+  tokens:
+    - id: key-admin-1
+      role: admin
+      scopes: [admin:*, security:read, security:write]
+      value: env:ROUTERGO_ADMIN_TOKEN
+      disabled: false
+```
+
 ## Примечания
 
 - Для Linux и Windows предусмотрены отдельные заглушки PacketIO; низкоуровневый захват пакетов требует прав и платформенных библиотек.
 - Метрики доступны на `/metrics`.
+- Pilot материалы: `docs/pilot-pack.md`.

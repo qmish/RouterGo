@@ -2,6 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -31,6 +34,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.yaml.in/yaml/v3"
 )
+
+type apiKeyView struct {
+	ID        string   `json:"id"`
+	Role      string   `json:"role"`
+	Scopes    []string `json:"scopes"`
+	CreatedAt string   `json:"created_at,omitempty"`
+	RotatedAt string   `json:"rotated_at,omitempty"`
+	Disabled  bool     `json:"disabled"`
+}
 
 type Handlers struct {
 	Routes           *routing.Table
@@ -825,6 +837,26 @@ func (h *Handlers) GetHealth(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
+func (h *Handlers) GetAuthInfo(c *gin.Context) {
+	role := c.GetString("role")
+	if role == "" {
+		role = roleRead
+	}
+	scopesAny, ok := c.Get("scopes")
+	scopes := defaultScopesForRole(role)
+	if ok {
+		if cast, ok := scopesAny.([]string); ok && len(cast) > 0 {
+			scopes = cast
+		}
+	}
+	tokenID := c.GetString("token_id")
+	c.JSON(http.StatusOK, gin.H{
+		"role":     role,
+		"scopes":   scopes,
+		"token_id": tokenID,
+	})
+}
+
 func (h *Handlers) ApplyConfig(c *gin.Context) {
 	if h.ConfigMgr == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
@@ -980,6 +1012,158 @@ func (h *Handlers) GetConfigBackup(c *gin.Context) {
 	}
 	c.Header("Content-Disposition", "attachment; filename=config-backup.json")
 	c.Data(http.StatusOK, "application/json; charset=utf-8", data)
+}
+
+func (h *Handlers) ListAPIKeys(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	tokens := h.ConfigMgr.Current().Security.Tokens
+	out := make([]apiKeyView, 0, len(tokens))
+	for _, token := range tokens {
+		if strings.TrimSpace(token.ID) == "" {
+			continue
+		}
+		out = append(out, apiKeyView{
+			ID:        token.ID,
+			Role:      token.Role,
+			Scopes:    normalizeScopes(token.Scopes, token.Role),
+			CreatedAt: token.CreatedAt,
+			RotatedAt: token.RotatedAt,
+			Disabled:  token.Disabled,
+		})
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *Handlers) CreateAPIKey(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	var req struct {
+		Role   string   `json:"role"`
+		Scopes []string `json:"scopes"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	role := strings.ToLower(strings.TrimSpace(req.Role))
+	if role == "" {
+		role = roleOps
+	}
+	if role != roleAdmin && role != roleOps && role != roleRead {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role"})
+		return
+	}
+	cfg, err := cloneConfig(h.ConfigMgr.Current())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "config clone failed"})
+		return
+	}
+	keyID := newKeyID()
+	plain, hash := generateAPIKey()
+	now := time.Now().UTC().Format(time.RFC3339)
+	cfg.Security.Tokens = append(cfg.Security.Tokens, config.TokenConfig{
+		ID:        keyID,
+		Role:      role,
+		Scopes:    normalizeScopes(req.Scopes, role),
+		Value:     hash,
+		CreatedAt: now,
+		RotatedAt: now,
+		Disabled:  false,
+	})
+	if err := h.ConfigMgr.Apply(cfg); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "apply failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"id":      keyID,
+		"role":    role,
+		"scopes":  normalizeScopes(req.Scopes, role),
+		"api_key": plain,
+	})
+}
+
+func (h *Handlers) RotateAPIKey(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	keyID := strings.TrimSpace(c.Param("id"))
+	if keyID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		return
+	}
+	cfg, err := cloneConfig(h.ConfigMgr.Current())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "config clone failed"})
+		return
+	}
+	plain, hash := generateAPIKey()
+	found := false
+	for i := range cfg.Security.Tokens {
+		token := &cfg.Security.Tokens[i]
+		if token.ID != keyID {
+			continue
+		}
+		token.Value = hash
+		token.Disabled = false
+		token.RotatedAt = time.Now().UTC().Format(time.RFC3339)
+		found = true
+		break
+	}
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "key not found"})
+		return
+	}
+	if err := h.ConfigMgr.Apply(cfg); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "apply failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"id":      keyID,
+		"api_key": plain,
+	})
+}
+
+func (h *Handlers) RevokeAPIKey(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	keyID := strings.TrimSpace(c.Param("id"))
+	if keyID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		return
+	}
+	cfg, err := cloneConfig(h.ConfigMgr.Current())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "config clone failed"})
+		return
+	}
+	found := false
+	for i := range cfg.Security.Tokens {
+		token := &cfg.Security.Tokens[i]
+		if token.ID != keyID {
+			continue
+		}
+		token.Disabled = true
+		token.RotatedAt = time.Now().UTC().Format(time.RFC3339)
+		found = true
+		break
+	}
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "key not found"})
+		return
+	}
+	if err := h.ConfigMgr.Apply(cfg); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "apply failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": keyID})
 }
 
 func (h *Handlers) RestoreConfig(c *gin.Context) {
@@ -1228,6 +1412,28 @@ func resolveActor(c *gin.Context, requested string) string {
 		}
 	}
 	return "system"
+}
+
+func generateAPIKey() (string, string) {
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		now := []byte(time.Now().UTC().Format(time.RFC3339Nano))
+		sum := sha256.Sum256(now)
+		plain := "rg_" + hex.EncodeToString(sum[:16])
+		hash := sha256.Sum256([]byte(plain))
+		return plain, "sha256:" + hex.EncodeToString(hash[:])
+	}
+	plain := "rg_" + hex.EncodeToString(buf)
+	sum := sha256.Sum256([]byte(plain))
+	return plain, "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func newKeyID() string {
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		return "key_" + strconv.FormatInt(time.Now().UTC().UnixNano(), 36)
+	}
+	return "key_" + hex.EncodeToString(buf)
 }
 
 func (h *Handlers) GetDashboardTopBandwidth(c *gin.Context) {

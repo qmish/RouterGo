@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
-	"encoding/hex"
-	"flag"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
+	"flag"
 	"fmt"
-	"net/http"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -21,10 +21,10 @@ import (
 	"router-go/internal/logger"
 	"router-go/internal/metrics"
 	"router-go/internal/observability"
-	"router-go/internal/presets"
 	"router-go/internal/platform"
-	"router-go/pkg/firewall"
+	"router-go/internal/presets"
 	"router-go/pkg/enrich"
+	"router-go/pkg/firewall"
 	"router-go/pkg/flow"
 	"router-go/pkg/ha"
 	"router-go/pkg/ids"
@@ -94,24 +94,24 @@ func main() {
 		router.Static("/dashboard", cfg.Dashboard.StaticDir)
 	}
 	handlers := &api.Handlers{
-		Routes:    routeTable,
-		Firewall:  firewallEngine,
-		IDS:       idsEngine,
-		NAT:       natTable,
-		QoS:       qosQueue,
-		Flow:      flowEngine,
-		P2P:       p2pEngine,
-		Proxy:     proxyEngine,
-		Enrich:    enrichSvc,
+		Routes:        routeTable,
+		Firewall:      firewallEngine,
+		IDS:           idsEngine,
+		NAT:           natTable,
+		QoS:           qosQueue,
+		Flow:          flowEngine,
+		P2P:           p2pEngine,
+		Proxy:         proxyEngine,
+		Enrich:        enrichSvc,
 		EnrichTimeout: time.Duration(cfg.Integrations.TimeoutSeconds) * time.Second,
-		Security:  &cfg.Security,
-		Log:       log,
-		ConfigMgr: cfgManager,
-		Metrics:   metricsSrv,
-		HA:        haMgr,
+		Security:      &cfg.Security,
+		Log:           log,
+		ConfigMgr:     cfgManager,
+		Metrics:       metricsSrv,
+		HA:            haMgr,
 		Observability: obsStore,
-		Alerts:    alertStore,
-		Presets:   presetStore,
+		Alerts:        alertStore,
+		Presets:       presetStore,
 	}
 	api.RegisterRoutes(router, handlers)
 	if cfg.Observability.PprofEnabled {
@@ -749,9 +749,16 @@ func loadTLSConfig(cfg config.TLSConfig, log *logger.Logger) (*tls.Config, error
 	if err != nil {
 		return nil, err
 	}
+	if cfg.RequireClientCert && strings.TrimSpace(cfg.ClientCAFile) == "" {
+		return nil, fmt.Errorf("client_ca_file is required when require_client_cert is true")
+	}
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{cert},
-		MinVersion:   tls.VersionTLS12,
+		MinVersion:   tls.VersionTLS13,
+		CurvePreferences: []tls.CurveID{
+			tls.X25519,
+			tls.CurveP256,
+		},
 	}
 	if cfg.ClientCAFile != "" {
 		data, err := os.ReadFile(cfg.ClientCAFile)

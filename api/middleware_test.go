@@ -121,9 +121,9 @@ func TestAuthMiddlewareBearerToken(t *testing.T) {
 func TestAuthMiddlewareAllowlistAllows(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := config.SecurityConfig{
-		Enabled:       true,
-		RequireAuth:   false,
-		AllowedCIDRs:  []string{"10.0.0.0/8"},
+		Enabled:      true,
+		RequireAuth:  false,
+		AllowedCIDRs: []string{"10.0.0.0/8"},
 	}
 	r := gin.New()
 	r.Use(AuthMiddleware(cfg, nil))
@@ -142,9 +142,9 @@ func TestAuthMiddlewareAllowlistAllows(t *testing.T) {
 func TestAuthMiddlewareAllowlistBlocks(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := config.SecurityConfig{
-		Enabled:       true,
-		RequireAuth:   false,
-		AllowedCIDRs:  []string{"10.0.0.0/8"},
+		Enabled:      true,
+		RequireAuth:  false,
+		AllowedCIDRs: []string{"10.0.0.0/8"},
 	}
 	r := gin.New()
 	r.Use(AuthMiddleware(cfg, nil))
@@ -163,9 +163,9 @@ func TestAuthMiddlewareAllowlistBlocks(t *testing.T) {
 func TestAuthMiddlewareAllowlistMisconfigured(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := config.SecurityConfig{
-		Enabled:       true,
-		RequireAuth:   false,
-		AllowedCIDRs:  []string{"bad-cidr"},
+		Enabled:      true,
+		RequireAuth:  false,
+		AllowedCIDRs: []string{"bad-cidr"},
 	}
 	r := gin.New()
 	r.Use(AuthMiddleware(cfg, nil))
@@ -242,6 +242,74 @@ func TestRequireRoleForbidden(t *testing.T) {
 
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", rr.Code)
+	}
+}
+
+func TestRequireScope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("role", "admin")
+		c.Set("scopes", []string{"security:read"})
+		c.Next()
+	})
+	r.Use(RequireScope("security:write"))
+	r.GET("/ok", func(c *gin.Context) { c.Status(200) })
+
+	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rr.Code)
+	}
+}
+
+func TestAuthMiddlewareDisabledTokenRejected(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := config.SecurityConfig{
+		Enabled:     true,
+		RequireAuth: true,
+		Tokens: []config.TokenConfig{
+			{ID: "k1", Role: "ops", Value: "token-ops", Disabled: true},
+		},
+	}
+	r := gin.New()
+	r.Use(AuthMiddleware(cfg, nil))
+	r.GET("/ok", func(c *gin.Context) { c.Status(200) })
+
+	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
+	req.Header.Set("X-API-Key", "token-ops")
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized && rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected unauthorized/service unavailable, got %d", rr.Code)
+	}
+}
+
+func TestAuthMiddlewareSetsScopes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := config.SecurityConfig{
+		Enabled:     true,
+		RequireAuth: true,
+		Tokens: []config.TokenConfig{
+			{ID: "k1", Role: "admin", Scopes: []string{"security:read"}, Value: "token-admin"},
+		},
+	}
+	r := gin.New()
+	r.Use(AuthMiddleware(cfg, nil))
+	r.GET("/ok", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"role":   c.GetString("role"),
+			"scopes": c.GetStringSlice("scopes"),
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
+	req.Header.Set("X-API-Key", "token-admin")
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
 	}
 }
 

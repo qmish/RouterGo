@@ -109,10 +109,16 @@ security:
   allowed_cidrs:
     - 10.0.0.0/8
   tokens:
-    - role: admin
+    - id: key-admin
+      role: admin
+      scopes: [admin:*, security:read, security:write]
       value: env:ROUTERGO_ADMIN_TOKEN
-    - role: read
+      disabled: false
+    - id: key-read
+      role: read
+      scopes: [config:read]
       value: env:ROUTERGO_READ_TOKEN
+      disabled: false
   tls:
     enabled: false
     cert_file: ""
