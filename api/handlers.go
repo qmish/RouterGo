@@ -930,6 +930,35 @@ func (h *Handlers) GetConfigHistory(c *gin.Context) {
 	})
 }
 
+func (h *Handlers) GetConfigDiff(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	fromValue := strings.TrimSpace(c.Query("from"))
+	toValue := strings.TrimSpace(c.Query("to"))
+	if fromValue == "" || toValue == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "from and to are required"})
+		return
+	}
+	fromRevision, err := strconv.Atoi(fromValue)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid from revision"})
+		return
+	}
+	toRevision, err := strconv.Atoi(toValue)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid to revision"})
+		return
+	}
+	diff, err := h.ConfigMgr.DiffRevisions(fromRevision, toRevision)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, diff)
+}
+
 func (h *Handlers) GetSystemTimeSettings(c *gin.Context) {
 	if h.ConfigMgr == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})

@@ -21,8 +21,8 @@
 
 ## Stage 3 - P0 Persistence and Audit
 
-- [ ] Персистентное хранение правил/политик/снапшотов.
-- [ ] Версионирование конфигов и diff между версиями.
+- [x] Персистентное хранение правил/политик/снапшотов.
+- [x] Версионирование конфигов и diff между версиями.
 - [ ] Audit trail изменений (кто/когда/что).
 - [ ] Backup/restore и проверка восстановления.
 
@@ -54,3 +54,4 @@
 - [x] 2026-03-02: Реализован API-процесс `validate -> plan -> apply` (`POST /api/config/plan`, обновлен `/api/config/apply`) с тестами.
 - [x] 2026-03-02: Усилен atomic apply (plan+revision), rollback сделан стековым и консистентным; добавлены тесты невалидного apply/plan и rollback без snapshot.
 - [x] 2026-03-02: Добавлена персистентность состояния config manager (current/snapshots/history/revision) и API `GET /api/config/history` (Stage 3, блок 1).
+- [x] 2026-03-02: Добавлен API diff ревизий конфигурации `GET /api/config/diff` и методы versioning/diff в config manager (Stage 3, блок 2).

@@ -42,6 +42,19 @@ type ApplyPlan struct {
 	HealthCheck       string    `json:"health_check"`
 }
 
+type SectionDiff struct {
+	Section string `json:"section"`
+	Before  any    `json:"before"`
+	After   any    `json:"after"`
+}
+
+type ConfigDiff struct {
+	FromRevision   int          `json:"from_revision"`
+	ToRevision     int          `json:"to_revision"`
+	ChangedSections []string    `json:"changed_sections"`
+	SectionDiffs   []SectionDiff `json:"section_diffs"`
+}
+
 type HistoryEntry struct {
 	ID        int       `json:"id"`
 	Timestamp time.Time `json:"timestamp"`
@@ -99,6 +112,66 @@ func (m *Manager) Revision() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.revision
+}
+
+func (m *Manager) DiffRevisions(fromRevision int, toRevision int) (ConfigDiff, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	fromCfg, ok := m.configByRevisionLocked(fromRevision)
+	if !ok {
+		return ConfigDiff{}, fmt.Errorf("from revision %d not found", fromRevision)
+	}
+	toCfg, ok := m.configByRevisionLocked(toRevision)
+	if !ok {
+		return ConfigDiff{}, fmt.Errorf("to revision %d not found", toRevision)
+	}
+
+	fromMap, err := configToMap(fromCfg)
+	if err != nil {
+		return ConfigDiff{}, err
+	}
+	toMap, err := configToMap(toCfg)
+	if err != nil {
+		return ConfigDiff{}, err
+	}
+
+	seen := map[string]struct{}{}
+	keys := make([]string, 0, len(fromMap)+len(toMap))
+	for k := range fromMap {
+		seen[k] = struct{}{}
+		keys = append(keys, k)
+	}
+	for k := range toMap {
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	changedSections := make([]string, 0, len(keys))
+	sectionDiffs := make([]SectionDiff, 0, len(keys))
+	for _, key := range keys {
+		before := fromMap[key]
+		after := toMap[key]
+		if reflect.DeepEqual(before, after) {
+			continue
+		}
+		changedSections = append(changedSections, key)
+		sectionDiffs = append(sectionDiffs, SectionDiff{
+			Section: key,
+			Before:  before,
+			After:   after,
+		})
+	}
+
+	return ConfigDiff{
+		FromRevision:   fromRevision,
+		ToRevision:     toRevision,
+		ChangedSections: changedSections,
+		SectionDiffs:   sectionDiffs,
+	}, nil
 }
 
 func (m *Manager) Apply(newCfg *Config) error {
@@ -377,4 +450,17 @@ func (m *Manager) persistLocked() error {
 		return err
 	}
 	return os.Rename(tmp, m.storePath)
+}
+
+func (m *Manager) configByRevisionLocked(revision int) (*Config, bool) {
+	if revision < 0 || revision > m.revision {
+		return nil, false
+	}
+	if revision == m.revision {
+		return m.current, true
+	}
+	if revision < len(m.snapshots) {
+		return m.snapshots[revision].Config, true
+	}
+	return nil, false
 }

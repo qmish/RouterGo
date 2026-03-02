@@ -242,3 +242,29 @@ func TestManagerPersistAndLoad(t *testing.T) {
 		t.Fatalf("expected non-empty history")
 	}
 }
+
+func TestManagerDiffRevisions(t *testing.T) {
+	base := &Config{API: APIConfig{Address: ":8080"}}
+	mgr := NewManager(base, nil)
+	if err := mgr.Apply(&Config{API: APIConfig{Address: ":8081"}}); err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+
+	diff, err := mgr.DiffRevisions(0, 1)
+	if err != nil {
+		t.Fatalf("diff failed: %v", err)
+	}
+	if len(diff.ChangedSections) == 0 {
+		t.Fatalf("expected changed sections")
+	}
+	foundAPI := false
+	for _, s := range diff.ChangedSections {
+		if s == "API" {
+			foundAPI = true
+			break
+		}
+	}
+	if !foundAPI {
+		t.Fatalf("expected API section to be changed")
+	}
+}

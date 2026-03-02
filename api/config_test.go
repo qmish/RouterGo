@@ -187,3 +187,42 @@ func TestGetConfigHistory(t *testing.T) {
 		t.Fatalf("expected history field")
 	}
 }
+
+func TestGetConfigDiff(t *testing.T) {
+	router := setupConfigRouter(func(*config.Config) error { return nil })
+	payload := map[string]any{
+		"config_yaml": "api:\n  address: :8081\n",
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/config/apply", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for apply, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/config/diff?from=0&to=1", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for diff, got %d", w.Code)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	if _, ok := out["changed_sections"]; !ok {
+		t.Fatalf("expected changed_sections field")
+	}
+}
+
+func TestGetConfigDiffInvalidParams(t *testing.T) {
+	router := setupConfigRouter(func(*config.Config) error { return nil })
+	req := httptest.NewRequest(http.MethodGet, "/api/config/diff?from=a&to=1", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
