@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -638,6 +639,83 @@ func TestWebhookMetricsTracksFailuresAndSuccess(t *testing.T) {
 	}
 	if !seenOK || !seenFail {
 		t.Fatalf("expected metrics for both webhook ids")
+	}
+}
+
+func TestWebhookFailureQueueAndRetry(t *testing.T) {
+	router := setupConfigRouter(func(*config.Config) error { return nil })
+	var attempts atomic.Int32
+	flappySink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts.Add(1) == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer flappySink.Close()
+
+	createPayload := map[string]any{
+		"id":          "wh-flappy",
+		"url":         flappySink.URL,
+		"events":      []string{"webhook.test"},
+		"enabled":     true,
+		"max_retries": 0,
+	}
+	body, _ := json.Marshal(createPayload)
+	req := httptest.NewRequest(http.MethodPost, "/api/integrations/webhooks", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on webhook create, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/integrations/webhooks/wh-flappy/test", bytes.NewReader([]byte("{}")))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 on first flappy call, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/integrations/webhooks/failures", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on failures list, got %d", w.Code)
+	}
+	var failures []map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &failures); err != nil {
+		t.Fatalf("invalid failures json: %v", err)
+	}
+	if len(failures) == 0 {
+		t.Fatalf("expected at least one failed delivery entry")
+	}
+	failureID, _ := failures[0]["id"].(string)
+	if failureID == "" {
+		t.Fatalf("expected failure id")
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/integrations/webhooks/failures/"+failureID+"/retry", bytes.NewReader([]byte("{}")))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on retry, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/integrations/webhooks/failures", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on failures list after retry, got %d", w.Code)
+	}
+	failures = nil
+	if err := json.Unmarshal(w.Body.Bytes(), &failures); err != nil {
+		t.Fatalf("invalid failures json: %v", err)
+	}
+	if len(failures) != 0 {
+		t.Fatalf("expected empty failures after successful retry, got %d", len(failures))
 	}
 }
 

@@ -61,8 +61,11 @@ go build -o p2pkeygen cmd/p2pkeygen/main.go
 - `POST /api/security/keys/{id}/revoke` — отзыв API ключа
 - `GET /api/integrations/webhooks` — список webhook endpoint'ов
 - `GET /api/integrations/webhooks/metrics` — метрики доставки webhook (attempt/success/fail/last status)
+- `GET /api/integrations/webhooks/failures` — очередь неуспешных доставок webhook (DLQ)
 - `POST /api/integrations/webhooks` — создать webhook endpoint и набор событий
 - `POST /api/integrations/webhooks/{id}/test` — отправить тестовое webhook-событие
+- `POST /api/integrations/webhooks/failures/{id}/retry` — повторить failed доставку из DLQ
+- `DELETE /api/integrations/webhooks/failures/{id}` — удалить failed доставку из DLQ
 - `DELETE /api/integrations/webhooks/{id}` — удалить webhook endpoint
 - `GET /api/policy/bundle/export` — экспорт policy bundle (routes/firewall/nat/qos/ids)
 - `POST /api/policy/bundle/import` — импорт policy bundle (replace/merge)

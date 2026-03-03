@@ -72,6 +72,7 @@ type Handlers struct {
 	webhookMu        sync.Mutex
 	webhooks         []WebhookConfig
 	webhookMetrics   map[string]*WebhookDeliveryMetrics
+	webhookFailures  []WebhookFailedDelivery
 }
 
 type WebhookConfig struct {
@@ -101,6 +102,18 @@ type WebhookDeliveryMetrics struct {
 	LastEvent     string `json:"last_event,omitempty"`
 	LastAttemptAt string `json:"last_attempt_at,omitempty"`
 	LastSuccessAt string `json:"last_success_at,omitempty"`
+}
+
+type WebhookFailedDelivery struct {
+	ID            string       `json:"id"`
+	WebhookID     string       `json:"webhook_id"`
+	URL           string       `json:"url"`
+	Event         WebhookEvent `json:"event"`
+	StatusCode    int          `json:"status_code,omitempty"`
+	Attempts      int          `json:"attempts"`
+	Error         string       `json:"error"`
+	CreatedAt     string       `json:"created_at"`
+	LastRetriedAt string       `json:"last_retried_at,omitempty"`
 }
 
 type PolicyBundle struct {
@@ -911,6 +924,57 @@ func (h *Handlers) GetWebhookMetrics(c *gin.Context) {
 	c.JSON(http.StatusOK, h.listWebhookMetrics())
 }
 
+func (h *Handlers) ListWebhookFailures(c *gin.Context) {
+	c.JSON(http.StatusOK, h.listWebhookFailures())
+}
+
+func (h *Handlers) DeleteWebhookFailure(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		return
+	}
+	if !h.removeWebhookFailureByID(id) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "failure not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id})
+}
+
+func (h *Handlers) RetryWebhookFailure(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		return
+	}
+	failure, ok := h.popWebhookFailureByID(id)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "failure not found"})
+		return
+	}
+	target, found := h.webhookByID(failure.WebhookID)
+	if !found {
+		target = WebhookConfig{
+			ID:         failure.WebhookID,
+			URL:        failure.URL,
+			Enabled:    true,
+			MaxRetries: 0,
+			TimeoutMS:  2000,
+		}
+	}
+	payload := failure.Event
+	if payload.Details == nil {
+		payload.Details = map[string]any{}
+	}
+	payload.Details["retry_failure_id"] = id
+	_, err := h.deliverWebhookEvent(target, payload)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id})
+}
+
 func (h *Handlers) CreateWebhook(c *gin.Context) {
 	var req struct {
 		ID         string   `json:"id"`
@@ -975,6 +1039,13 @@ func (h *Handlers) DeleteWebhook(c *gin.Context) {
 		}
 		h.webhooks = append(h.webhooks[:i], h.webhooks[i+1:]...)
 		delete(h.webhookMetrics, id)
+		filtered := h.webhookFailures[:0]
+		for _, failure := range h.webhookFailures {
+			if failure.WebhookID != id {
+				filtered = append(filtered, failure)
+			}
+		}
+		h.webhookFailures = filtered
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id})
 		return
 	}
@@ -1761,7 +1832,7 @@ func (h *Handlers) emitWebhookEvent(event string, actor string, details map[stri
 
 func (h *Handlers) deliverWebhookEvent(target WebhookConfig, payload WebhookEvent) (int, error) {
 	statusCode, attempts, err := postWebhookWithRetry(target.URL, payload, target.MaxRetries, target.TimeoutMS)
-	h.recordWebhookDelivery(target.ID, payload.Event, statusCode, attempts, err)
+	h.recordWebhookDelivery(target, payload, statusCode, attempts, err)
 	return statusCode, err
 }
 
@@ -1824,17 +1895,17 @@ func (h *Handlers) ensureWebhookMetricsLocked() {
 	}
 }
 
-func (h *Handlers) recordWebhookDelivery(id string, event string, statusCode int, attempts int, deliveryErr error) {
+func (h *Handlers) recordWebhookDelivery(target WebhookConfig, event WebhookEvent, statusCode int, attempts int, deliveryErr error) {
 	h.webhookMu.Lock()
 	defer h.webhookMu.Unlock()
 	h.ensureWebhookMetricsLocked()
-	entry, ok := h.webhookMetrics[id]
+	entry, ok := h.webhookMetrics[target.ID]
 	if !ok {
-		entry = &WebhookDeliveryMetrics{WebhookID: id}
-		h.webhookMetrics[id] = entry
+		entry = &WebhookDeliveryMetrics{WebhookID: target.ID}
+		h.webhookMetrics[target.ID] = entry
 	}
 	entry.AttemptsTotal += uint64(attempts)
-	entry.LastEvent = strings.TrimSpace(event)
+	entry.LastEvent = strings.TrimSpace(event.Event)
 	entry.LastStatus = statusCode
 	entry.LastAttemptAt = time.Now().UTC().Format(time.RFC3339)
 	if deliveryErr == nil {
@@ -1845,6 +1916,20 @@ func (h *Handlers) recordWebhookDelivery(id string, event string, statusCode int
 	}
 	entry.FailedTotal++
 	entry.LastError = deliveryErr.Error()
+	failure := WebhookFailedDelivery{
+		ID:         "wf_" + strconv.FormatInt(time.Now().UTC().UnixNano(), 36),
+		WebhookID:  target.ID,
+		URL:        target.URL,
+		Event:      event,
+		StatusCode: statusCode,
+		Attempts:   attempts,
+		Error:      deliveryErr.Error(),
+		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
+	}
+	h.webhookFailures = append(h.webhookFailures, failure)
+	if len(h.webhookFailures) > 500 {
+		h.webhookFailures = h.webhookFailures[len(h.webhookFailures)-500:]
+	}
 }
 
 func (h *Handlers) listWebhookMetrics() []WebhookDeliveryMetrics {
@@ -1858,6 +1943,45 @@ func (h *Handlers) listWebhookMetrics() []WebhookDeliveryMetrics {
 		out = append(out, *metric)
 	}
 	return out
+}
+
+func (h *Handlers) listWebhookFailures() []WebhookFailedDelivery {
+	h.webhookMu.Lock()
+	defer h.webhookMu.Unlock()
+	if len(h.webhookFailures) == 0 {
+		return []WebhookFailedDelivery{}
+	}
+	out := make([]WebhookFailedDelivery, 0, len(h.webhookFailures))
+	out = append(out, h.webhookFailures...)
+	return out
+}
+
+func (h *Handlers) removeWebhookFailureByID(id string) bool {
+	h.webhookMu.Lock()
+	defer h.webhookMu.Unlock()
+	for i := range h.webhookFailures {
+		if h.webhookFailures[i].ID != id {
+			continue
+		}
+		h.webhookFailures = append(h.webhookFailures[:i], h.webhookFailures[i+1:]...)
+		return true
+	}
+	return false
+}
+
+func (h *Handlers) popWebhookFailureByID(id string) (WebhookFailedDelivery, bool) {
+	h.webhookMu.Lock()
+	defer h.webhookMu.Unlock()
+	for i := range h.webhookFailures {
+		if h.webhookFailures[i].ID != id {
+			continue
+		}
+		failure := h.webhookFailures[i]
+		h.webhookFailures = append(h.webhookFailures[:i], h.webhookFailures[i+1:]...)
+		failure.LastRetriedAt = time.Now().UTC().Format(time.RFC3339)
+		return failure, true
+	}
+	return WebhookFailedDelivery{}, false
 }
 
 func hasIDSOverrides(cfg config.IDSConfig) bool {

@@ -52,6 +52,12 @@
 - [x] Настройки per-webhook: `max_retries` и `timeout_ms`.
 - [x] Endpoint метрик доставок `GET /api/integrations/webhooks/metrics`.
 
+## Stage 8 - Webhook Failure Operations
+
+- [x] DLQ для failed webhook доставок с сохранением payload/ошибки/attempts/status.
+- [x] API для управления DLQ: list/retry/delete.
+- [x] Тесты для сценария flappy endpoint (fail -> retry -> success).
+
 ## Progress Log
 
 - [x] 2026-03-02: Создан `docs/roadmap-checklist.md` и зафиксирован поэтапный план.
@@ -73,3 +79,4 @@
 - [x] 2026-03-03: Закрыт Stage 5: завершены страницы settings/dashboard (API keys + backup/restore в UI), добавлен Setup Wizard на пресетах, подготовлен pilot-pack `docs/pilot-pack.md`.
 - [x] 2026-03-03: Закрыт Stage 6: добавлены webhook integrations (`/api/integrations/webhooks` + test), policy bundle export/import (`/api/policy/bundle/export|import`), SLO endpoint (`/api/monitoring/slo`) и тесты.
 - [x] 2026-03-03: Закрыт Stage 7: webhook retry/backoff + per-webhook delivery params (`max_retries`, `timeout_ms`) + delivery metrics endpoint (`/api/integrations/webhooks/metrics`) с тестами.
+- [x] 2026-03-03: Закрыт Stage 8: добавлен DLQ failed webhook deliveries и API (`/api/integrations/webhooks/failures`, retry/delete), добавлены тесты flappy webhook retry.
