@@ -14,6 +14,18 @@ go build -o router cmd/router/main.go
 ./router --config config/config.yaml
 ```
 
+## Kubernetes (namespace routergo)
+
+Базовый манифест `Namespace + Deployment + Service` находится в `k8s-routergo.yaml`.
+
+Применение через отдельный kubeconfig:
+
+```powershell
+$env:KUBECONFIG="C:\Users\qmish\.kube\fb\config"
+kubectl apply -f .\k8s-routergo.yaml
+kubectl -n routergo rollout status deployment/routergo
+```
+
 Генерация ключей P2P:
 
 ```bash
