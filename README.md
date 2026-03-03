@@ -18,6 +18,7 @@ go build -o router cmd/router/main.go
 
 Базовый манифест `Namespace + Deployment + Service` находится в `k8s-routergo.yaml`.
 Операционный манифест (`HPA + PDB`) находится в `k8s-routergo-ops.yaml`.
+Ingress манифест находится в `k8s-routergo-ingress.yaml`.
 
 Применение через отдельный kubeconfig:
 
@@ -25,6 +26,7 @@ go build -o router cmd/router/main.go
 $env:KUBECONFIG="C:\Users\qmish\.kube\fb\config"
 kubectl apply -f .\k8s-routergo.yaml
 kubectl apply -f .\k8s-routergo-ops.yaml
+kubectl apply -f .\k8s-routergo-ingress.yaml
 kubectl -n routergo rollout status deployment/routergo
 ```
 
@@ -35,6 +37,11 @@ kubectl -n routergo rollout status deployment/routergo
 ```
 
 Скрипт содержит rollout fallback: если `rollout status` таймаутится, он проверяет `availableReplicas` и выполняет cleanup pod'ов со статусом `Unknown`.
+
+Доступ извне:
+- `Service` настроен как `LoadBalancer` (в кластерах без external LB доступен через выделенный `NodePort`).
+- Ingress host: `routergo.local` (добавь запись в hosts на IP ingress-контроллера/ноды).
+- Прямой путь для UI: `/dashboard`.
 
 Генерация ключей P2P:
 

@@ -19,6 +19,9 @@ Invoke-Kubectl @("apply", "-f", ".\k8s-routergo.yaml")
 Write-Host "Applying ops manifest..."
 Invoke-Kubectl @("apply", "-f", ".\k8s-routergo-ops.yaml")
 
+Write-Host "Applying ingress manifest..."
+Invoke-Kubectl @("apply", "-f", ".\k8s-routergo-ingress.yaml")
+
 Write-Host "Restarting deployment..."
 Invoke-Kubectl @("-n", "routergo", "rollout", "restart", "deployment/routergo")
 
@@ -41,3 +44,9 @@ Invoke-Kubectl @("-n", "routergo", "get", "deploy", "routergo")
 Invoke-Kubectl @("-n", "routergo", "get", "svc", "routergo")
 Invoke-Kubectl @("-n", "routergo", "get", "hpa", "routergo-hpa")
 Invoke-Kubectl @("-n", "routergo", "get", "pdb", "routergo-pdb")
+Invoke-Kubectl @("-n", "routergo", "get", "ingress", "routergo")
+
+$nodePort = (& kubectl -n routergo get svc routergo -o jsonpath='{.spec.ports[0].nodePort}')
+if ($nodePort) {
+    Write-Host "NodePort access: http://<node-ip>:$nodePort/dashboard"
+}
