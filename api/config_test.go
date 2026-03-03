@@ -2,8 +2,12 @@ package api
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -716,6 +720,71 @@ func TestWebhookFailureQueueAndRetry(t *testing.T) {
 	}
 	if len(failures) != 0 {
 		t.Fatalf("expected empty failures after successful retry, got %d", len(failures))
+	}
+}
+
+func TestWebhookSignatureHeaders(t *testing.T) {
+	router := setupConfigRouter(func(*config.Config) error { return nil })
+	secret := "test-secret-123"
+	received := make(chan map[string]string, 1)
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		body, _ := io.ReadAll(r.Body)
+		received <- map[string]string{
+			"event":     r.Header.Get("X-RouterGo-Event"),
+			"timestamp": r.Header.Get("X-RouterGo-Timestamp"),
+			"signature": r.Header.Get("X-RouterGo-Signature"),
+			"body":      string(body),
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer sink.Close()
+
+	createPayload := map[string]any{
+		"id":      "wh-signed",
+		"url":     sink.URL,
+		"events":  []string{"webhook.test"},
+		"enabled": true,
+		"secret":  secret,
+	}
+	body, _ := json.Marshal(createPayload)
+	req := httptest.NewRequest(http.MethodPost, "/api/integrations/webhooks", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on create signed webhook, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/integrations/webhooks/wh-signed/test", bytes.NewReader([]byte("{}")))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on signed webhook test, got %d", w.Code)
+	}
+
+	var captured map[string]string
+	select {
+	case captured = <-received:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("expected signed webhook delivery")
+	}
+	if captured["event"] != "webhook.test" {
+		t.Fatalf("expected webhook.test event header, got %q", captured["event"])
+	}
+	if captured["timestamp"] == "" {
+		t.Fatalf("expected non-empty timestamp header")
+	}
+	if captured["signature"] == "" {
+		t.Fatalf("expected non-empty signature header")
+	}
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(captured["body"]))
+	expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+	if captured["signature"] != expected {
+		t.Fatalf("expected signature %q, got %q", expected, captured["signature"])
 	}
 }
 

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -82,6 +83,7 @@ type WebhookConfig struct {
 	Enabled    bool     `json:"enabled"`
 	MaxRetries int      `json:"max_retries,omitempty"`
 	TimeoutMS  int      `json:"timeout_ms,omitempty"`
+	Secret     string   `json:"secret,omitempty"`
 	CreatedAt  string   `json:"created_at,omitempty"`
 }
 
@@ -983,6 +985,7 @@ func (h *Handlers) CreateWebhook(c *gin.Context) {
 		Enabled    *bool    `json:"enabled"`
 		MaxRetries int      `json:"max_retries"`
 		TimeoutMS  int      `json:"timeout_ms"`
+		Secret     string   `json:"secret"`
 	}
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
@@ -1019,6 +1022,7 @@ func (h *Handlers) CreateWebhook(c *gin.Context) {
 		Enabled:    enabled,
 		MaxRetries: maxRetries,
 		TimeoutMS:  timeoutMS,
+		Secret:     strings.TrimSpace(req.Secret),
 		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
 	})
 	h.webhookMetrics[id] = &WebhookDeliveryMetrics{WebhookID: id}
@@ -1831,12 +1835,12 @@ func (h *Handlers) emitWebhookEvent(event string, actor string, details map[stri
 }
 
 func (h *Handlers) deliverWebhookEvent(target WebhookConfig, payload WebhookEvent) (int, error) {
-	statusCode, attempts, err := postWebhookWithRetry(target.URL, payload, target.MaxRetries, target.TimeoutMS)
+	statusCode, attempts, err := postWebhookWithRetry(target.URL, payload, target.MaxRetries, target.TimeoutMS, target.Secret)
 	h.recordWebhookDelivery(target, payload, statusCode, attempts, err)
 	return statusCode, err
 }
 
-func postWebhookWithRetry(url string, payload WebhookEvent, maxRetries int, timeoutMS int) (int, int, error) {
+func postWebhookWithRetry(url string, payload WebhookEvent, maxRetries int, timeoutMS int, secret string) (int, int, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return 0, 0, err
@@ -1848,7 +1852,19 @@ func postWebhookWithRetry(url string, payload WebhookEvent, maxRetries int, time
 	var lastErr error
 	for attempt := 1; attempt <= totalAttempts; attempt++ {
 		client := &http.Client{Timeout: time.Duration(timeoutMS) * time.Millisecond}
-		resp, err := client.Post(url, "application/json", strings.NewReader(string(body)))
+		req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(string(body)))
+		if err != nil {
+			lastErr = err
+			if attempt < totalAttempts {
+				time.Sleep(time.Duration(attempt*100) * time.Millisecond)
+			}
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-RouterGo-Event", payload.Event)
+		req.Header.Set("X-RouterGo-Timestamp", payload.Timestamp)
+		req.Header.Set("X-RouterGo-Signature", webhookSignature(body, secret))
+		resp, err := client.Do(req)
 		if err != nil {
 			lastErr = err
 		} else {
@@ -1867,6 +1883,16 @@ func postWebhookWithRetry(url string, payload WebhookEvent, maxRetries int, time
 		lastErr = errors.New("webhook delivery failed")
 	}
 	return lastStatus, totalAttempts, lastErr
+}
+
+func webhookSignature(body []byte, secret string) string {
+	secret = strings.TrimSpace(secret)
+	if secret == "" {
+		return ""
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write(body)
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
 }
 
 func normalizeWebhookRetries(value int) int {

@@ -58,6 +58,12 @@
 - [x] API для управления DLQ: list/retry/delete.
 - [x] Тесты для сценария flappy endpoint (fail -> retry -> success).
 
+## Stage 9 - Webhook Delivery Security
+
+- [x] Подпись webhook payload через HMAC SHA256 (`X-RouterGo-Signature`) с per-endpoint `secret`.
+- [x] Стандартные delivery headers: `X-RouterGo-Event`, `X-RouterGo-Timestamp`.
+- [x] Тест валидации подписи и заголовков доставки.
+
 ## Progress Log
 
 - [x] 2026-03-02: Создан `docs/roadmap-checklist.md` и зафиксирован поэтапный план.
@@ -80,3 +86,4 @@
 - [x] 2026-03-03: Закрыт Stage 6: добавлены webhook integrations (`/api/integrations/webhooks` + test), policy bundle export/import (`/api/policy/bundle/export|import`), SLO endpoint (`/api/monitoring/slo`) и тесты.
 - [x] 2026-03-03: Закрыт Stage 7: webhook retry/backoff + per-webhook delivery params (`max_retries`, `timeout_ms`) + delivery metrics endpoint (`/api/integrations/webhooks/metrics`) с тестами.
 - [x] 2026-03-03: Закрыт Stage 8: добавлен DLQ failed webhook deliveries и API (`/api/integrations/webhooks/failures`, retry/delete), добавлены тесты flappy webhook retry.
+- [x] 2026-03-03: Закрыт Stage 9: добавлена подпись webhook payload (HMAC SHA256) и delivery headers (`X-RouterGo-Event`, `X-RouterGo-Timestamp`, `X-RouterGo-Signature`) с тестом валидации.

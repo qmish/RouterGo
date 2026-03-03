@@ -67,6 +67,7 @@ go build -o p2pkeygen cmd/p2pkeygen/main.go
 - `POST /api/integrations/webhooks/failures/{id}/retry` — повторить failed доставку из DLQ
 - `DELETE /api/integrations/webhooks/failures/{id}` — удалить failed доставку из DLQ
 - `DELETE /api/integrations/webhooks/{id}` — удалить webhook endpoint
+- Webhook delivery headers: `X-RouterGo-Event`, `X-RouterGo-Timestamp`, `X-RouterGo-Signature` (HMAC SHA256 при заданном `secret`).
 - `GET /api/policy/bundle/export` — экспорт policy bundle (routes/firewall/nat/qos/ids)
 - `POST /api/policy/bundle/import` — импорт policy bundle (replace/merge)
 - `GET /api/dashboard/top/bandwidth` — топ потребителей трафика
