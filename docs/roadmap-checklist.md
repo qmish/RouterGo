@@ -70,6 +70,12 @@
 - [x] Изолированное развертывание в namespace `routergo`.
 - [x] Применение манифестов через выделенный kubeconfig и проверка rollout.
 
+## Stage 11 - Kubernetes Operability Add-ons
+
+- [x] Добавлены `HPA` и `PodDisruptionBudget` для namespace `routergo`.
+- [x] Добавлен скрипт деплоя `deploy-routergo.ps1` с kubeconfig параметром.
+- [x] Применены ops-манифесты в кластер и проверены ресурсы (`hpa`, `pdb`).
+
 ## Progress Log
 
 - [x] 2026-03-02: Создан `docs/roadmap-checklist.md` и зафиксирован поэтапный план.
@@ -94,3 +100,4 @@
 - [x] 2026-03-03: Закрыт Stage 8: добавлен DLQ failed webhook deliveries и API (`/api/integrations/webhooks/failures`, retry/delete), добавлены тесты flappy webhook retry.
 - [x] 2026-03-03: Закрыт Stage 9: добавлена подпись webhook payload (HMAC SHA256) и delivery headers (`X-RouterGo-Event`, `X-RouterGo-Timestamp`, `X-RouterGo-Signature`) с тестом валидации.
 - [x] 2026-03-03: Закрыт Stage 10: добавлен манифест `k8s-routergo.yaml` (Namespace/Deployment/Service) и выполнено применение в namespace `routergo` через kubeconfig `C:\Users\qmish\.kube\fb\config`.
+- [x] 2026-03-03: Закрыт Stage 11: добавлены `k8s-routergo-ops.yaml` (`HPA`, `PDB`) и `deploy-routergo.ps1`; применено в namespace `routergo` через kubeconfig `C:\Users\qmish\.kube\fb\config`.
