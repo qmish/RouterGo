@@ -34,6 +34,8 @@ kubectl -n routergo rollout status deployment/routergo
 .\deploy-routergo.ps1 -KubeConfigPath "C:\Users\qmish\.kube\fb\config"
 ```
 
+Скрипт содержит rollout fallback: если `rollout status` таймаутится, он проверяет `availableReplicas` и выполняет cleanup pod'ов со статусом `Unknown`.
+
 Генерация ключей P2P:
 
 ```bash
