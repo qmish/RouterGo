@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"router-go/internal/config"
 	"router-go/internal/metrics"
@@ -434,5 +435,123 @@ func TestAPIKeysCreateRotateRevoke(t *testing.T) {
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 on revoke, got %d", w.Code)
+	}
+}
+
+func TestPolicyBundleExportImport(t *testing.T) {
+	router := setupConfigRouter(func(*config.Config) error { return nil })
+
+	exportReq := httptest.NewRequest(http.MethodGet, "/api/policy/bundle/export", nil)
+	exportRes := httptest.NewRecorder()
+	router.ServeHTTP(exportRes, exportReq)
+	if exportRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 on export, got %d", exportRes.Code)
+	}
+
+	importPayload := map[string]any{
+		"mode": "replace",
+		"bundle": map[string]any{
+			"routes": []map[string]any{
+				{
+					"destination": "10.10.0.0/16",
+					"gateway":     "10.0.0.1",
+					"interface":   "eth0",
+					"metric":      10,
+				},
+			},
+		},
+	}
+	body, _ := json.Marshal(importPayload)
+	importReq := httptest.NewRequest(http.MethodPost, "/api/policy/bundle/import", bytes.NewReader(body))
+	importReq.Header.Set("Content-Type", "application/json")
+	importRes := httptest.NewRecorder()
+	router.ServeHTTP(importRes, importReq)
+	if importRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 on import, got %d: %s", importRes.Code, importRes.Body.String())
+	}
+
+	cfgReq := httptest.NewRequest(http.MethodGet, "/api/config/export?format=json", nil)
+	cfgRes := httptest.NewRecorder()
+	router.ServeHTTP(cfgRes, cfgReq)
+	if cfgRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 on config export, got %d", cfgRes.Code)
+	}
+	var cfgOut map[string]any
+	if err := json.Unmarshal(cfgRes.Body.Bytes(), &cfgOut); err != nil {
+		t.Fatalf("invalid config export json: %v", err)
+	}
+	routes, ok := cfgOut["Routes"].([]any)
+	if !ok || len(routes) != 1 {
+		t.Fatalf("expected one route after import, got %v", cfgOut["Routes"])
+	}
+}
+
+func TestWebhookLifecycleAndTestEvent(t *testing.T) {
+	router := setupConfigRouter(func(*config.Config) error { return nil })
+	received := make(chan map[string]any, 1)
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+			received <- payload
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer sink.Close()
+
+	createPayload := map[string]any{
+		"id":      "ops-webhook",
+		"url":     sink.URL,
+		"events":  []string{"webhook.test"},
+		"enabled": true,
+	}
+	body, _ := json.Marshal(createPayload)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/integrations/webhooks", bytes.NewReader(body))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRes := httptest.NewRecorder()
+	router.ServeHTTP(createRes, createReq)
+	if createRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 on create webhook, got %d", createRes.Code)
+	}
+
+	testReq := httptest.NewRequest(http.MethodPost, "/api/integrations/webhooks/ops-webhook/test", bytes.NewReader([]byte("{}")))
+	testReq.Header.Set("Content-Type", "application/json")
+	testRes := httptest.NewRecorder()
+	router.ServeHTTP(testRes, testReq)
+	if testRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 on test webhook, got %d", testRes.Code)
+	}
+
+	select {
+	case payload := <-received:
+		if payload["event"] != "webhook.test" {
+			t.Fatalf("expected webhook.test event, got %v", payload["event"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("expected webhook delivery")
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/integrations/webhooks/ops-webhook", nil)
+	deleteRes := httptest.NewRecorder()
+	router.ServeHTTP(deleteRes, deleteReq)
+	if deleteRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 on delete webhook, got %d", deleteRes.Code)
+	}
+}
+
+func TestMonitoringSLOEndpoint(t *testing.T) {
+	router := setupConfigRouter(func(*config.Config) error { return nil })
+	req := httptest.NewRequest(http.MethodGet, "/api/monitoring/slo", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	if _, ok := out["apply_success_rate"]; !ok {
+		t.Fatalf("missing apply_success_rate field")
 	}
 }

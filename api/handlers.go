@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -68,6 +69,32 @@ type Handlers struct {
 	dhcpMu           sync.Mutex
 	dhcpPools        []DHCPPool
 	dhcpReservations []DHCPReservation
+	webhookMu        sync.Mutex
+	webhooks         []WebhookConfig
+}
+
+type WebhookConfig struct {
+	ID        string   `json:"id"`
+	URL       string   `json:"url"`
+	Events    []string `json:"events"`
+	Enabled   bool     `json:"enabled"`
+	CreatedAt string   `json:"created_at,omitempty"`
+}
+
+type WebhookEvent struct {
+	Event     string         `json:"event"`
+	Timestamp string         `json:"timestamp"`
+	Actor     string         `json:"actor,omitempty"`
+	Details   map[string]any `json:"details,omitempty"`
+}
+
+type PolicyBundle struct {
+	Routes           []config.RouteConfig          `json:"routes"`
+	Firewall         []config.FirewallRuleConfig   `json:"firewall"`
+	FirewallDefaults config.FirewallDefaultsConfig `json:"firewall_defaults"`
+	NAT              []config.NATRuleConfig        `json:"nat"`
+	QoS              []config.QoSClassConfig       `json:"qos"`
+	IDS              config.IDSConfig              `json:"ids"`
 }
 
 func (h *Handlers) GetRoutes(c *gin.Context) {
@@ -857,6 +884,200 @@ func (h *Handlers) GetAuthInfo(c *gin.Context) {
 	})
 }
 
+func (h *Handlers) ListWebhooks(c *gin.Context) {
+	h.webhookMu.Lock()
+	defer h.webhookMu.Unlock()
+	out := make([]WebhookConfig, 0, len(h.webhooks))
+	out = append(out, h.webhooks...)
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *Handlers) CreateWebhook(c *gin.Context) {
+	var req struct {
+		ID      string   `json:"id"`
+		URL     string   `json:"url"`
+		Events  []string `json:"events"`
+		Enabled *bool    `json:"enabled"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	id := strings.TrimSpace(req.ID)
+	if id == "" {
+		id = "wh_" + strconv.FormatInt(time.Now().UTC().UnixNano(), 36)
+	}
+	if strings.TrimSpace(req.URL) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "url is required"})
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	events := normalizeWebhookEvents(req.Events)
+	h.webhookMu.Lock()
+	defer h.webhookMu.Unlock()
+	for _, wh := range h.webhooks {
+		if wh.ID == id {
+			c.JSON(http.StatusConflict, gin.H{"error": "webhook id already exists"})
+			return
+		}
+	}
+	h.webhooks = append(h.webhooks, WebhookConfig{
+		ID:        id,
+		URL:       strings.TrimSpace(req.URL),
+		Events:    events,
+		Enabled:   enabled,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+	})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id})
+}
+
+func (h *Handlers) DeleteWebhook(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		return
+	}
+	h.webhookMu.Lock()
+	defer h.webhookMu.Unlock()
+	for i, wh := range h.webhooks {
+		if wh.ID != id {
+			continue
+		}
+		h.webhooks = append(h.webhooks[:i], h.webhooks[i+1:]...)
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id})
+		return
+	}
+	c.JSON(http.StatusNotFound, gin.H{"error": "webhook not found"})
+}
+
+func (h *Handlers) TestWebhook(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		return
+	}
+	wh, ok := h.webhookByID(id)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "webhook not found"})
+		return
+	}
+	ev := WebhookEvent{
+		Event:     "webhook.test",
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Actor:     resolveActor(c, ""),
+		Details:   map[string]any{"webhook_id": id},
+	}
+	if err := postWebhook(wh.URL, ev); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id})
+}
+
+func (h *Handlers) ExportPolicyBundle(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	cfg := h.ConfigMgr.Current()
+	bundle := PolicyBundle{
+		Routes:           append([]config.RouteConfig(nil), cfg.Routes...),
+		Firewall:         append([]config.FirewallRuleConfig(nil), cfg.Firewall...),
+		FirewallDefaults: cfg.FirewallDefaults,
+		NAT:              append([]config.NATRuleConfig(nil), cfg.NAT...),
+		QoS:              append([]config.QoSClassConfig(nil), cfg.QoS...),
+		IDS:              cfg.IDS,
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"version": 1,
+		"bundle":  bundle,
+	})
+}
+
+func (h *Handlers) ImportPolicyBundle(c *gin.Context) {
+	if h.ConfigMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
+		return
+	}
+	var req struct {
+		Mode   string       `json:"mode"`
+		Bundle PolicyBundle `json:"bundle"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	mode := strings.ToLower(strings.TrimSpace(req.Mode))
+	if mode == "" {
+		mode = "replace"
+	}
+	if mode != "replace" && mode != "merge" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "mode must be replace or merge"})
+		return
+	}
+	cfg, err := cloneConfig(h.ConfigMgr.Current())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "config clone failed"})
+		return
+	}
+	if mode == "replace" {
+		cfg.Routes = append([]config.RouteConfig(nil), req.Bundle.Routes...)
+		cfg.Firewall = append([]config.FirewallRuleConfig(nil), req.Bundle.Firewall...)
+		cfg.FirewallDefaults = req.Bundle.FirewallDefaults
+		cfg.NAT = append([]config.NATRuleConfig(nil), req.Bundle.NAT...)
+		cfg.QoS = append([]config.QoSClassConfig(nil), req.Bundle.QoS...)
+		cfg.IDS = req.Bundle.IDS
+	} else {
+		cfg.Routes = append(cfg.Routes, req.Bundle.Routes...)
+		cfg.Firewall = append(cfg.Firewall, req.Bundle.Firewall...)
+		if req.Bundle.FirewallDefaults.Input != "" || req.Bundle.FirewallDefaults.Output != "" || req.Bundle.FirewallDefaults.Forward != "" {
+			cfg.FirewallDefaults = req.Bundle.FirewallDefaults
+		}
+		cfg.NAT = append(cfg.NAT, req.Bundle.NAT...)
+		cfg.QoS = append(cfg.QoS, req.Bundle.QoS...)
+		if hasIDSOverrides(req.Bundle.IDS) {
+			cfg.IDS = req.Bundle.IDS
+		}
+	}
+	if err := h.ConfigMgr.Apply(cfg); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "apply failed"})
+		return
+	}
+	actor := resolveActor(c, "")
+	h.emitWebhookEvent("policy.bundle.imported", actor, map[string]any{"mode": mode})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "mode": mode})
+}
+
+func (h *Handlers) GetMonitoringSLO(c *gin.Context) {
+	if h.Metrics == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "metrics unavailable"})
+		return
+	}
+	snap := h.Metrics.Snapshot()
+	totalConfigOps := snap.ConfigApply + snap.ConfigApplyFailed
+	applySuccessRate := 1.0
+	if totalConfigOps > 0 {
+		applySuccessRate = float64(snap.ConfigApply) / float64(totalConfigOps)
+	}
+	dropRate := 0.0
+	errorRate := 0.0
+	if snap.Packets > 0 {
+		dropRate = float64(snap.Drops) / float64(snap.Packets)
+		errorRate = float64(snap.Errors) / float64(snap.Packets)
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"apply_success_rate":  applySuccessRate,
+		"drop_rate":           dropRate,
+		"error_rate":          errorRate,
+		"packets_total":       snap.Packets,
+		"config_apply_total":  snap.ConfigApply,
+		"config_apply_failed": snap.ConfigApplyFailed,
+	})
+}
+
 func (h *Handlers) ApplyConfig(c *gin.Context) {
 	if h.ConfigMgr == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "config manager unavailable"})
@@ -900,6 +1121,10 @@ func (h *Handlers) ApplyConfig(c *gin.Context) {
 		return
 	}
 	h.Metrics.IncConfigApply()
+	h.emitWebhookEvent("config.applied", actor, map[string]any{
+		"planned_snapshot_id": plan.PlannedSnapshotID,
+		"changed_sections":    plan.ChangedSections,
+	})
 	c.JSON(http.StatusOK, gin.H{
 		"status":              "ok",
 		"actor":               actor,
@@ -960,6 +1185,9 @@ func (h *Handlers) RollbackConfig(c *gin.Context) {
 		return
 	}
 	h.Metrics.IncConfigRollback()
+	h.emitWebhookEvent("config.rollback", resolveActor(c, req.Actor), map[string]any{
+		"reason": strings.TrimSpace(req.Reason),
+	})
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
@@ -1085,6 +1313,11 @@ func (h *Handlers) CreateAPIKey(c *gin.Context) {
 		"scopes":  normalizeScopes(req.Scopes, role),
 		"api_key": plain,
 	})
+	h.emitWebhookEvent("security.key.created", resolveActor(c, ""), map[string]any{
+		"id":     keyID,
+		"role":   role,
+		"scopes": normalizeScopes(req.Scopes, role),
+	})
 }
 
 func (h *Handlers) RotateAPIKey(c *gin.Context) {
@@ -1127,6 +1360,7 @@ func (h *Handlers) RotateAPIKey(c *gin.Context) {
 		"id":      keyID,
 		"api_key": plain,
 	})
+	h.emitWebhookEvent("security.key.rotated", resolveActor(c, ""), map[string]any{"id": keyID})
 }
 
 func (h *Handlers) RevokeAPIKey(c *gin.Context) {
@@ -1163,6 +1397,7 @@ func (h *Handlers) RevokeAPIKey(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "apply failed"})
 		return
 	}
+	h.emitWebhookEvent("security.key.revoked", resolveActor(c, ""), map[string]any{"id": keyID})
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": keyID})
 }
 
@@ -1197,6 +1432,7 @@ func (h *Handlers) RestoreConfig(c *gin.Context) {
 		"actor":    actor,
 		"revision": h.ConfigMgr.Revision(),
 	})
+	h.emitWebhookEvent("config.restore", actor, map[string]any{"revision": h.ConfigMgr.Revision()})
 }
 
 func (h *Handlers) GetConfigDiff(c *gin.Context) {
@@ -1412,6 +1648,114 @@ func resolveActor(c *gin.Context, requested string) string {
 		}
 	}
 	return "system"
+}
+
+func normalizeWebhookEvents(events []string) []string {
+	if len(events) == 0 {
+		return []string{"*"}
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(events))
+	for _, ev := range events {
+		ev = strings.ToLower(strings.TrimSpace(ev))
+		if ev == "" {
+			continue
+		}
+		if _, ok := seen[ev]; ok {
+			continue
+		}
+		seen[ev] = struct{}{}
+		out = append(out, ev)
+	}
+	if len(out) == 0 {
+		return []string{"*"}
+	}
+	return out
+}
+
+func webhookMatchesEvent(wh WebhookConfig, event string) bool {
+	if len(wh.Events) == 0 {
+		return true
+	}
+	event = strings.ToLower(strings.TrimSpace(event))
+	for _, configured := range wh.Events {
+		configured = strings.ToLower(strings.TrimSpace(configured))
+		if configured == "*" || configured == event {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *Handlers) webhookByID(id string) (WebhookConfig, bool) {
+	h.webhookMu.Lock()
+	defer h.webhookMu.Unlock()
+	for _, wh := range h.webhooks {
+		if wh.ID == id {
+			return wh, true
+		}
+	}
+	return WebhookConfig{}, false
+}
+
+func (h *Handlers) emitWebhookEvent(event string, actor string, details map[string]any) {
+	h.webhookMu.Lock()
+	targets := make([]WebhookConfig, 0, len(h.webhooks))
+	targets = append(targets, h.webhooks...)
+	h.webhookMu.Unlock()
+	if len(targets) == 0 {
+		return
+	}
+	payload := WebhookEvent{
+		Event:     strings.ToLower(strings.TrimSpace(event)),
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Actor:     strings.TrimSpace(actor),
+		Details:   details,
+	}
+	for _, wh := range targets {
+		if !wh.Enabled || strings.TrimSpace(wh.URL) == "" || !webhookMatchesEvent(wh, payload.Event) {
+			continue
+		}
+		target := wh
+		go func() {
+			if err := postWebhook(target.URL, payload); err != nil && h.Log != nil {
+				h.Log.Warn("webhook dispatch failed", map[string]any{
+					"id":    target.ID,
+					"event": payload.Event,
+					"error": err.Error(),
+				})
+			}
+		}()
+	}
+}
+
+func postWebhook(url string, payload WebhookEvent) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Post(url, "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("webhook status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func hasIDSOverrides(cfg config.IDSConfig) bool {
+	return cfg.Enabled ||
+		cfg.WindowSeconds != 0 ||
+		cfg.RateThreshold != 0 ||
+		cfg.PortScanThreshold != 0 ||
+		cfg.UniqueDstThreshold != 0 ||
+		strings.TrimSpace(cfg.BehaviorAction) != "" ||
+		cfg.AlertLimit != 0 ||
+		len(cfg.WhitelistSrc) > 0 ||
+		len(cfg.WhitelistDst) > 0
 }
 
 func generateAPIKey() (string, string) {

@@ -40,6 +40,12 @@
 - [x] Presets для типовых сценариев.
 - [x] Pilot-pack (quickstart, runbook, troubleshooting) и KPI пилота.
 
+## Stage 6 - Integrations and Operability
+
+- [x] Webhook integrations для событий конфигурации и ключей (CRUD + test event).
+- [x] Policy bundle export/import (replace/merge) для быстрого переноса политик.
+- [x] SLO endpoint для drop/error/apply-success rate.
+
 ## Progress Log
 
 - [x] 2026-03-02: Создан `docs/roadmap-checklist.md` и зафиксирован поэтапный план.
@@ -59,3 +65,4 @@
 - [x] 2026-03-02: Добавлены backup/restore config manager с checksum-верификацией (`GET /api/config/backup`, `POST /api/config/restore`) и тестами восстановления (Stage 3, блок 4).
 - [x] 2026-03-03: Реализованы Stage 4 security baseline: `GET /api/auth/me`, managed API keys (list/create/rotate/revoke), UI RBAC по роли, TLS hardening (TLS1.3 + mTLS checks), CI security workflow (`gosec`, `govulncheck`).
 - [x] 2026-03-03: Закрыт Stage 5: завершены страницы settings/dashboard (API keys + backup/restore в UI), добавлен Setup Wizard на пресетах, подготовлен pilot-pack `docs/pilot-pack.md`.
+- [x] 2026-03-03: Закрыт Stage 6: добавлены webhook integrations (`/api/integrations/webhooks` + test), policy bundle export/import (`/api/policy/bundle/export|import`), SLO endpoint (`/api/monitoring/slo`) и тесты.

@@ -59,6 +59,12 @@ go build -o p2pkeygen cmd/p2pkeygen/main.go
 - `POST /api/security/keys` — создание API ключа с role/scopes
 - `POST /api/security/keys/{id}/rotate` — ротация API ключа
 - `POST /api/security/keys/{id}/revoke` — отзыв API ключа
+- `GET /api/integrations/webhooks` — список webhook endpoint'ов
+- `POST /api/integrations/webhooks` — создать webhook endpoint и набор событий
+- `POST /api/integrations/webhooks/{id}/test` — отправить тестовое webhook-событие
+- `DELETE /api/integrations/webhooks/{id}` — удалить webhook endpoint
+- `GET /api/policy/bundle/export` — экспорт policy bundle (routes/firewall/nat/qos/ids)
+- `POST /api/policy/bundle/import` — импорт policy bundle (replace/merge)
 - `GET /api/dashboard/top/bandwidth` — топ потребителей трафика
 - `GET /api/dashboard/sessions/tree` — дерево сессий
 - `GET /api/dashboard/alerts` — алерты в реальном времени
@@ -75,6 +81,7 @@ go build -o p2pkeygen cmd/p2pkeygen/main.go
 - `GET /api/observability/traces` — последние API‑трейсы
 - `GET /api/observability/alerts` — последние алерты
 - `GET /api/stats` — базовая статистика (rx/tx/пакеты/байты/ошибки/дропы/причины/классы QoS/конфиг/p2p/proxy)
+- `GET /api/monitoring/slo` — вычисляемые SLO метрики (apply success/drop/error rate)
 
 В Dashboard добавлены:
 - авторизация по API key (`/api/auth/me`);
