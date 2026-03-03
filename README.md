@@ -60,6 +60,7 @@ go build -o p2pkeygen cmd/p2pkeygen/main.go
 - `POST /api/security/keys/{id}/rotate` — ротация API ключа
 - `POST /api/security/keys/{id}/revoke` — отзыв API ключа
 - `GET /api/integrations/webhooks` — список webhook endpoint'ов
+- `GET /api/integrations/webhooks/metrics` — метрики доставки webhook (attempt/success/fail/last status)
 - `POST /api/integrations/webhooks` — создать webhook endpoint и набор событий
 - `POST /api/integrations/webhooks/{id}/test` — отправить тестовое webhook-событие
 - `DELETE /api/integrations/webhooks/{id}` — удалить webhook endpoint

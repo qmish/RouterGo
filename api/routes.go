@@ -50,6 +50,7 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers) {
 	apiGroup.POST("/security/keys/:id/rotate", RequireRole(roleAdmin), RequireScope("security:write"), handlers.RotateAPIKey)
 	apiGroup.POST("/security/keys/:id/revoke", RequireRole(roleAdmin), RequireScope("security:write"), handlers.RevokeAPIKey)
 	apiGroup.GET("/integrations/webhooks", RequireRole(roleAdmin), RequireScope("security:read"), handlers.ListWebhooks)
+	apiGroup.GET("/integrations/webhooks/metrics", RequireRole(roleAdmin), RequireScope("security:read"), handlers.GetWebhookMetrics)
 	apiGroup.POST("/integrations/webhooks", RequireRole(roleAdmin), RequireScope("security:write"), handlers.CreateWebhook)
 	apiGroup.DELETE("/integrations/webhooks/:id", RequireRole(roleAdmin), RequireScope("security:write"), handlers.DeleteWebhook)
 	apiGroup.POST("/integrations/webhooks/:id/test", RequireRole(roleAdmin), RequireScope("security:write"), handlers.TestWebhook)

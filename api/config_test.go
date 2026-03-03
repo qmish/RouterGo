@@ -539,6 +539,108 @@ func TestWebhookLifecycleAndTestEvent(t *testing.T) {
 	}
 }
 
+func TestWebhookMetricsTracksFailuresAndSuccess(t *testing.T) {
+	router := setupConfigRouter(func(*config.Config) error { return nil })
+
+	sinkOK := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer sinkOK.Close()
+	sinkFail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer sinkFail.Close()
+
+	createOK := map[string]any{
+		"id":          "wh-ok",
+		"url":         sinkOK.URL,
+		"events":      []string{"webhook.test"},
+		"enabled":     true,
+		"max_retries": 0,
+	}
+	body, _ := json.Marshal(createOK)
+	req := httptest.NewRequest(http.MethodPost, "/api/integrations/webhooks", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on create ok webhook, got %d", w.Code)
+	}
+
+	createFail := map[string]any{
+		"id":          "wh-fail",
+		"url":         sinkFail.URL,
+		"events":      []string{"webhook.test"},
+		"enabled":     true,
+		"max_retries": 1,
+		"timeout_ms":  500,
+	}
+	body, _ = json.Marshal(createFail)
+	req = httptest.NewRequest(http.MethodPost, "/api/integrations/webhooks", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on create fail webhook, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/integrations/webhooks/wh-ok/test", bytes.NewReader([]byte("{}")))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on test ok webhook, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/integrations/webhooks/wh-fail/test", bytes.NewReader([]byte("{}")))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 on test failed webhook, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/integrations/webhooks/metrics", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on metrics, got %d", w.Code)
+	}
+	var out []map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("invalid metrics json: %v", err)
+	}
+	if len(out) < 2 {
+		t.Fatalf("expected at least two metrics entries, got %d", len(out))
+	}
+	seenOK := false
+	seenFail := false
+	for _, metric := range out {
+		id, _ := metric["webhook_id"].(string)
+		switch id {
+		case "wh-ok":
+			seenOK = true
+			success, _ := metric["success_total"].(float64)
+			if success < 1 {
+				t.Fatalf("expected success_total >= 1 for wh-ok, got %v", metric["success_total"])
+			}
+		case "wh-fail":
+			seenFail = true
+			failed, _ := metric["failed_total"].(float64)
+			attempts, _ := metric["attempts_total"].(float64)
+			if failed < 1 {
+				t.Fatalf("expected failed_total >= 1 for wh-fail, got %v", metric["failed_total"])
+			}
+			if attempts < 2 {
+				t.Fatalf("expected attempts_total >= 2 for wh-fail, got %v", metric["attempts_total"])
+			}
+		}
+	}
+	if !seenOK || !seenFail {
+		t.Fatalf("expected metrics for both webhook ids")
+	}
+}
+
 func TestMonitoringSLOEndpoint(t *testing.T) {
 	router := setupConfigRouter(func(*config.Config) error { return nil })
 	req := httptest.NewRequest(http.MethodGet, "/api/monitoring/slo", nil)

@@ -71,14 +71,17 @@ type Handlers struct {
 	dhcpReservations []DHCPReservation
 	webhookMu        sync.Mutex
 	webhooks         []WebhookConfig
+	webhookMetrics   map[string]*WebhookDeliveryMetrics
 }
 
 type WebhookConfig struct {
-	ID        string   `json:"id"`
-	URL       string   `json:"url"`
-	Events    []string `json:"events"`
-	Enabled   bool     `json:"enabled"`
-	CreatedAt string   `json:"created_at,omitempty"`
+	ID         string   `json:"id"`
+	URL        string   `json:"url"`
+	Events     []string `json:"events"`
+	Enabled    bool     `json:"enabled"`
+	MaxRetries int      `json:"max_retries,omitempty"`
+	TimeoutMS  int      `json:"timeout_ms,omitempty"`
+	CreatedAt  string   `json:"created_at,omitempty"`
 }
 
 type WebhookEvent struct {
@@ -86,6 +89,18 @@ type WebhookEvent struct {
 	Timestamp string         `json:"timestamp"`
 	Actor     string         `json:"actor,omitempty"`
 	Details   map[string]any `json:"details,omitempty"`
+}
+
+type WebhookDeliveryMetrics struct {
+	WebhookID     string `json:"webhook_id"`
+	AttemptsTotal uint64 `json:"attempts_total"`
+	SuccessTotal  uint64 `json:"success_total"`
+	FailedTotal   uint64 `json:"failed_total"`
+	LastStatus    int    `json:"last_status,omitempty"`
+	LastError     string `json:"last_error,omitempty"`
+	LastEvent     string `json:"last_event,omitempty"`
+	LastAttemptAt string `json:"last_attempt_at,omitempty"`
+	LastSuccessAt string `json:"last_success_at,omitempty"`
 }
 
 type PolicyBundle struct {
@@ -892,12 +907,18 @@ func (h *Handlers) ListWebhooks(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
+func (h *Handlers) GetWebhookMetrics(c *gin.Context) {
+	c.JSON(http.StatusOK, h.listWebhookMetrics())
+}
+
 func (h *Handlers) CreateWebhook(c *gin.Context) {
 	var req struct {
-		ID      string   `json:"id"`
-		URL     string   `json:"url"`
-		Events  []string `json:"events"`
-		Enabled *bool    `json:"enabled"`
+		ID         string   `json:"id"`
+		URL        string   `json:"url"`
+		Events     []string `json:"events"`
+		Enabled    *bool    `json:"enabled"`
+		MaxRetries int      `json:"max_retries"`
+		TimeoutMS  int      `json:"timeout_ms"`
 	}
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
@@ -915,9 +936,12 @@ func (h *Handlers) CreateWebhook(c *gin.Context) {
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
+	maxRetries := normalizeWebhookRetries(req.MaxRetries)
+	timeoutMS := normalizeWebhookTimeoutMS(req.TimeoutMS)
 	events := normalizeWebhookEvents(req.Events)
 	h.webhookMu.Lock()
 	defer h.webhookMu.Unlock()
+	h.ensureWebhookMetricsLocked()
 	for _, wh := range h.webhooks {
 		if wh.ID == id {
 			c.JSON(http.StatusConflict, gin.H{"error": "webhook id already exists"})
@@ -925,12 +949,15 @@ func (h *Handlers) CreateWebhook(c *gin.Context) {
 		}
 	}
 	h.webhooks = append(h.webhooks, WebhookConfig{
-		ID:        id,
-		URL:       strings.TrimSpace(req.URL),
-		Events:    events,
-		Enabled:   enabled,
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		ID:         id,
+		URL:        strings.TrimSpace(req.URL),
+		Events:     events,
+		Enabled:    enabled,
+		MaxRetries: maxRetries,
+		TimeoutMS:  timeoutMS,
+		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
 	})
+	h.webhookMetrics[id] = &WebhookDeliveryMetrics{WebhookID: id}
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id})
 }
 
@@ -947,6 +974,7 @@ func (h *Handlers) DeleteWebhook(c *gin.Context) {
 			continue
 		}
 		h.webhooks = append(h.webhooks[:i], h.webhooks[i+1:]...)
+		delete(h.webhookMetrics, id)
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id})
 		return
 	}
@@ -970,7 +998,8 @@ func (h *Handlers) TestWebhook(c *gin.Context) {
 		Actor:     resolveActor(c, ""),
 		Details:   map[string]any{"webhook_id": id},
 	}
-	if err := postWebhook(wh.URL, ev); err != nil {
+	_, err := h.deliverWebhookEvent(wh, ev)
+	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
@@ -1718,7 +1747,8 @@ func (h *Handlers) emitWebhookEvent(event string, actor string, details map[stri
 		}
 		target := wh
 		go func() {
-			if err := postWebhook(target.URL, payload); err != nil && h.Log != nil {
+			_, err := h.deliverWebhookEvent(target, payload)
+			if err != nil && h.Log != nil {
 				h.Log.Warn("webhook dispatch failed", map[string]any{
 					"id":    target.ID,
 					"event": payload.Event,
@@ -1729,21 +1759,105 @@ func (h *Handlers) emitWebhookEvent(event string, actor string, details map[stri
 	}
 }
 
-func postWebhook(url string, payload WebhookEvent) error {
+func (h *Handlers) deliverWebhookEvent(target WebhookConfig, payload WebhookEvent) (int, error) {
+	statusCode, attempts, err := postWebhookWithRetry(target.URL, payload, target.MaxRetries, target.TimeoutMS)
+	h.recordWebhookDelivery(target.ID, payload.Event, statusCode, attempts, err)
+	return statusCode, err
+}
+
+func postWebhookWithRetry(url string, payload WebhookEvent, maxRetries int, timeoutMS int) (int, int, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Post(url, "application/json", strings.NewReader(string(body)))
-	if err != nil {
-		return err
+	maxRetries = normalizeWebhookRetries(maxRetries)
+	timeoutMS = normalizeWebhookTimeoutMS(timeoutMS)
+	totalAttempts := maxRetries + 1
+	lastStatus := 0
+	var lastErr error
+	for attempt := 1; attempt <= totalAttempts; attempt++ {
+		client := &http.Client{Timeout: time.Duration(timeoutMS) * time.Millisecond}
+		resp, err := client.Post(url, "application/json", strings.NewReader(string(body)))
+		if err != nil {
+			lastErr = err
+		} else {
+			lastStatus = resp.StatusCode
+			_ = resp.Body.Close()
+			if resp.StatusCode < http.StatusBadRequest {
+				return lastStatus, attempt, nil
+			}
+			lastErr = fmt.Errorf("webhook status %d", resp.StatusCode)
+		}
+		if attempt < totalAttempts {
+			time.Sleep(time.Duration(attempt*100) * time.Millisecond)
+		}
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("webhook status %d", resp.StatusCode)
+	if lastErr == nil {
+		lastErr = errors.New("webhook delivery failed")
 	}
-	return nil
+	return lastStatus, totalAttempts, lastErr
+}
+
+func normalizeWebhookRetries(value int) int {
+	if value < 0 {
+		return 0
+	}
+	if value > 5 {
+		return 5
+	}
+	return value
+}
+
+func normalizeWebhookTimeoutMS(value int) int {
+	if value <= 0 {
+		return 2000
+	}
+	if value > 30000 {
+		return 30000
+	}
+	return value
+}
+
+func (h *Handlers) ensureWebhookMetricsLocked() {
+	if h.webhookMetrics == nil {
+		h.webhookMetrics = make(map[string]*WebhookDeliveryMetrics)
+	}
+}
+
+func (h *Handlers) recordWebhookDelivery(id string, event string, statusCode int, attempts int, deliveryErr error) {
+	h.webhookMu.Lock()
+	defer h.webhookMu.Unlock()
+	h.ensureWebhookMetricsLocked()
+	entry, ok := h.webhookMetrics[id]
+	if !ok {
+		entry = &WebhookDeliveryMetrics{WebhookID: id}
+		h.webhookMetrics[id] = entry
+	}
+	entry.AttemptsTotal += uint64(attempts)
+	entry.LastEvent = strings.TrimSpace(event)
+	entry.LastStatus = statusCode
+	entry.LastAttemptAt = time.Now().UTC().Format(time.RFC3339)
+	if deliveryErr == nil {
+		entry.SuccessTotal++
+		entry.LastError = ""
+		entry.LastSuccessAt = entry.LastAttemptAt
+		return
+	}
+	entry.FailedTotal++
+	entry.LastError = deliveryErr.Error()
+}
+
+func (h *Handlers) listWebhookMetrics() []WebhookDeliveryMetrics {
+	h.webhookMu.Lock()
+	defer h.webhookMu.Unlock()
+	if len(h.webhookMetrics) == 0 {
+		return []WebhookDeliveryMetrics{}
+	}
+	out := make([]WebhookDeliveryMetrics, 0, len(h.webhookMetrics))
+	for _, metric := range h.webhookMetrics {
+		out = append(out, *metric)
+	}
+	return out
 }
 
 func hasIDSOverrides(cfg config.IDSConfig) bool {
